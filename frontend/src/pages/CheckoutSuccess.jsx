@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
@@ -21,7 +21,7 @@ export default function CheckoutSuccess() {
       }).catch(() => {});
     };
     poll();
-  }, [sp]);
+  }, [sp, clear]);
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-24 text-center">

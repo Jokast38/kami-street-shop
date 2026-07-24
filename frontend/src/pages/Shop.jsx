@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ export default function Shop() {
   const [priceRange, setPriceRange] = useState([0, 500]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = () => {
+  const fetchData = useCallback(() => {
     setLoading(true);
     const params = {};
     if (category) params.category = category;
@@ -21,13 +21,13 @@ export default function Shop() {
     if (priceRange[0] > 0) params.min_price = priceRange[0];
     if (priceRange[1] < 500) params.max_price = priceRange[1];
     api.get("/products", { params }).then(r => setProducts(r.data)).finally(() => setLoading(false));
-  };
+  }, [category, search, priceRange]);
 
   useEffect(() => {
     api.get("/categories").then(r => setCategories(r.data));
   }, []);
 
-  useEffect(() => { fetchData(); }, [category, priceRange]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">

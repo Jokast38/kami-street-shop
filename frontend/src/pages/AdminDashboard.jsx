@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,15 @@ export default function AdminDashboard() {
   const [banners, setBanners] = useState([]);
   const [syncing, setSyncing] = useState(false);
 
-  const loadAll = () => {
+  const loadAll = useCallback(() => {
     authAxios.get("/admin/stats").then(r => setStats(r.data)).catch(() => {});
     authAxios.get("/admin/products").then(r => setProducts(r.data)).catch(() => {});
     authAxios.get("/admin/orders").then(r => setOrders(r.data)).catch(() => {});
     authAxios.get("/admin/blog").then(r => setBlog(r.data)).catch(() => {});
     authAxios.get("/admin/banners").then(r => setBanners(r.data)).catch(() => {});
-  };
+  }, [authAxios]);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const doLogout = () => { logout(); nav("/admin/login"); };
 
