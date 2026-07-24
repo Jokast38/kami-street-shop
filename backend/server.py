@@ -704,7 +704,7 @@ async def sync_media(user=Depends(current_admin)):
                     "id": str(uuid.uuid4()),
                     "wp_media_id": m["id"],
                     "title": default_titles[i % len(default_titles)],
-                    "subtitle": "La collection Kami Street. Ride hard, dress harder.",
+                    "subtitle": "La collection Kami Street. Fatbikes, scooters, trottinettes & accessoires pour rouler électrique.",
                     "image": src,
                     "cta_text": "Explorer la collection",
                     "cta_link": "/shop",
