@@ -14,7 +14,7 @@ export default function ProductCard({ p, index = 0 }) {
       data-testid={`product-card-${p.slug}`}
     >
       <Link to={`/product/${p.slug}`} className="product-card block bg-card group">
-        <div className="aspect-square overflow-hidden bg-secondary">
+        <div className="aspect-square overflow-hidden bg-white">
           <img
             src={img}
             alt={p.name}

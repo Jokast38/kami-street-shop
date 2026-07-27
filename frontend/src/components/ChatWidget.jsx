@@ -123,7 +123,7 @@ function ChatProductCard({ p }) {
   const img = p.images?.[0] || "https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=400";
   return (
     <div className="flex gap-3 border border-border bg-card p-2 w-full" data-testid={`chat-product-${p.slug}`}>
-      <div className="w-16 h-16 shrink-0 bg-secondary overflow-hidden">
+      <div className="w-16 h-16 shrink-0 bg-white overflow-hidden">
         <img src={img} alt={p.name} className="w-full h-full object-contain" loading="lazy" />
       </div>
       <div className="flex-1 min-w-0 flex flex-col justify-center">
