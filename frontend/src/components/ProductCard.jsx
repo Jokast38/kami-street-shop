@@ -14,11 +14,11 @@ export default function ProductCard({ p, index = 0 }) {
       data-testid={`product-card-${p.slug}`}
     >
       <Link to={`/product/${p.slug}`} className="product-card block bg-card group">
-        <div className="aspect-[4/5] overflow-hidden bg-secondary">
+        <div className="aspect-square overflow-hidden bg-secondary">
           <img
             src={img}
             alt={p.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
             loading="lazy"
           />
         </div>

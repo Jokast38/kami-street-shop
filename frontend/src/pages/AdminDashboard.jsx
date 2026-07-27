@@ -114,12 +114,22 @@ const StatCard = ({ icon, label, value, testId }) => (
   </Card>
 );
 
+const WC_STATUS_LABELS = {
+  publish: "Publié",
+  private: "Privé",
+  draft: "Brouillon",
+  pending: "En attente",
+};
+
 function ProductsPanel({ items, authAxios, reload }) {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", images: "", featured: false, active: true };
   const [form, setForm] = useState(emptyProd);
+
+  const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
 
   const openNew = () => { setEditing(null); setForm(emptyProd); setOpen(true); };
   const openEdit = (p) => {
@@ -154,31 +164,51 @@ function ProductsPanel({ items, authAxios, reload }) {
 
   return (
     <div>
-      <div className="flex justify-between mb-4">
-        <h2 className="display text-xl font-bold">Produits ({items.length})</h2>
-        <Button onClick={openNew} className="cta-primary rounded-none" data-testid="new-product-btn"><Plus className="w-4 h-4 mr-2" />Nouveau</Button>
+      <div className="flex justify-between mb-4 items-center flex-wrap gap-3">
+        <h2 className="display text-xl font-bold">Produits ({filtered.length}/{items.length})</h2>
+        <div className="flex items-center gap-3">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-40 h-9 rounded-none text-xs" data-testid="product-status-filter"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les statuts</SelectItem>
+              <SelectItem value="publish">Publié</SelectItem>
+              <SelectItem value="private">Privé</SelectItem>
+              <SelectItem value="draft">Brouillon</SelectItem>
+              <SelectItem value="pending">En attente</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={openNew} className="cta-primary rounded-none" data-testid="new-product-btn"><Plus className="w-4 h-4 mr-2" />Nouveau</Button>
+        </div>
       </div>
       <div className="border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-secondary"><tr>
             <th className="text-left p-3">Image</th><th className="text-left p-3">Nom</th>
             <th className="text-left p-3">Prix</th><th className="text-left p-3">Stock</th>
-            <th className="text-left p-3">Statut</th><th></th>
+            <th className="text-left p-3">Statut WP</th><th className="text-left p-3">Actif (boutique)</th><th></th>
           </tr></thead>
           <tbody>
-            {items.map(p => (
-              <tr key={p.id} className="border-t border-border" data-testid={`admin-product-${p.id}`}>
-                <td className="p-3"><img src={p.images?.[0]} alt="" className="w-12 h-12 object-cover" /></td>
-                <td className="p-3 font-medium">{p.name}</td>
-                <td className="p-3">{p.price?.toFixed(2)} €</td>
-                <td className="p-3">{p.stock}</td>
-                <td className="p-3">{p.active ? "Actif" : "Inactif"}</td>
-                <td className="p-3 text-right">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(p)}><Edit className="w-4 h-4" /></Button>
-                  <Button size="icon" variant="ghost" onClick={() => del(p.id)}><Trash2 className="w-4 h-4" /></Button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map(p => {
+              const wcStatus = p.wc_status || (p.active ? "publish" : "draft");
+              return (
+                <tr key={p.id} className="border-t border-border" data-testid={`admin-product-${p.id}`}>
+                  <td className="p-3"><img src={p.images?.[0]} alt="" className="w-12 h-12 object-cover" /></td>
+                  <td className="p-3 font-medium">{p.name}</td>
+                  <td className="p-3">{p.price?.toFixed(2)} €</td>
+                  <td className="p-3">{p.stock}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 text-xs uppercase ${wcStatus === "publish" ? "bg-accent text-black" : "bg-secondary"}`}>
+                      {WC_STATUS_LABELS[wcStatus] || wcStatus}
+                    </span>
+                  </td>
+                  <td className="p-3">{p.active ? "Actif" : "Inactif"}</td>
+                  <td className="p-3 text-right">
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(p)}><Edit className="w-4 h-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => del(p.id)}><Trash2 className="w-4 h-4" /></Button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

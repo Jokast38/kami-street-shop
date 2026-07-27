@@ -604,7 +604,7 @@ async def sync_woo(user=Depends(current_admin)):
 
         # Products (paginated)
         while True:
-            items = await _woo_get("products", {"per_page": 100, "page": page, "status": "publish"})
+            items = await _woo_get("products", {"per_page": 100, "page": page, "status": "any"})
             if not items:
                 break
             for p in items:
@@ -639,6 +639,7 @@ async def sync_woo(user=Depends(current_admin)):
                     "variations": variations,
                     "featured": p.get("featured", False),
                     "active": p.get("status") == "publish",
+                    "wc_status": p.get("status"),
                     "updated_at": now_iso(),
                 }
                 await db.products.update_one({"woo_id": p["id"]}, {"$set": doc}, upsert=True)

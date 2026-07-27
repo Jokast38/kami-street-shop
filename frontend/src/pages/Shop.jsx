@@ -10,7 +10,7 @@ export default function Shop() {
   const [categories, setCategories] = useState([]);
   const [category, setCategory] = useState(null);
   const [search, setSearch] = useState("");
-  const [priceRange, setPriceRange] = useState([0, 500]);
+  const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(() => {
@@ -19,7 +19,7 @@ export default function Shop() {
     if (category) params.category = category;
     if (search) params.search = search;
     if (priceRange[0] > 0) params.min_price = priceRange[0];
-    if (priceRange[1] < 500) params.max_price = priceRange[1];
+    if (priceRange[1] < 5000) params.max_price = priceRange[1];
     api.get("/products", { params }).then(r => setProducts(r.data)).finally(() => setLoading(false));
   }, [category, search, priceRange]);
 
@@ -44,7 +44,7 @@ export default function Shop() {
           </div>
           <div>
             <div className="text-sm uppercase tracking-widest font-bold mb-3">Prix (€)</div>
-            <Slider value={priceRange} min={0} max={500} step={10} onValueChange={setPriceRange} />
+            <Slider value={priceRange} min={0} max={5000} step={10} onValueChange={setPriceRange} />
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
               <span>{priceRange[0]}€</span><span>{priceRange[1]}€</span>
             </div>
