@@ -47,6 +47,10 @@ WP_APP_PWD = os.environ["WORDPRESS_APP_PASSWORD_K"]
 
 WP_BASE = f"https://{WP_SITE}" if not WP_SITE.startswith("http") else WP_SITE
 
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:27b")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "https://ollama.com")
+
 # MongoDB
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -319,6 +323,105 @@ async def get_blog(slug: str):
 async def list_banners():
     docs = await db.banners.find({"active": True}, {"_id": 0}).sort("order", 1).to_list(50)
     return docs
+
+
+# ----------------------------- Chatbot (Ollama Cloud) -----------------------------
+async def build_catalog_context(limit: int = 200) -> str:
+    """Catalogue live depuis Mongo : reflète toujours l'état courant de la boutique
+    (ajout/modif/suppression produit, sync WooCommerce) sans étape de resynchro manuelle."""
+    docs = await db.products.find({"active": True}, {"_id": 0}).limit(limit).to_list(limit)
+    if not docs:
+        return "Le catalogue est actuellement vide."
+
+    lines = []
+    for p in docs:
+        price = p.get("sale_price") or p.get("price") or 0
+        price_txt = f"{price:.2f} €"
+        if p.get("sale_price"):
+            price_txt += f" (prix normal {p.get('price', 0):.2f} €)"
+        stock = "en stock" if (p.get("stock") or 0) > 0 else "en rupture de stock"
+        cats = ", ".join(p.get("categories") or []) or "non catégorisé"
+        short = (p.get("short_description") or p.get("description") or "").strip()
+        if len(short) > 220:
+            short = short[:220].rsplit(" ", 1)[0] + "…"
+        lines.append(
+            f"- slug: {p.get('slug')} | nom: {p.get('name')} | {price_txt} | {stock} | catégories: {cats} | {short}"
+        )
+    return "\n".join(lines)
+
+
+CHAT_SYSTEM_PROMPT = """Tu es l'assistant virtuel de la boutique en ligne Kami Street.
+Tu aides les visiteurs à trouver des produits, tu réponds à leurs questions sur le catalogue,
+les prix, le stock et les catégories.
+
+Règles strictes :
+- Ne recommande QUE des produits présents dans le catalogue fourni ci-dessous. N'invente jamais de produit, de prix ou de caractéristique.
+- Si aucun produit du catalogue ne correspond à la demande, dis-le clairement et propose l'alternative la plus proche du catalogue.
+- Sois concis et sympathique. Ne donne PAS de lien ni d'URL dans le texte : les fiches produits s'affichent automatiquement sous forme de cartes visuelles.
+- Réponds dans la langue du client (français par défaut).
+- Quand tu recommandes un ou plusieurs produits précis du catalogue, termine IMPÉRATIVEMENT ta réponse par une ligne unique au format exact :
+  [[PRODUCTS: slug1, slug2]]
+  en utilisant les "slug" exacts du catalogue (1 à 3 produits max, les plus pertinents). N'ajoute cette ligne que si tu recommandes des produits précis, jamais sinon.
+
+Catalogue actuel de la boutique :
+{catalog}
+"""
+
+PRODUCTS_TAG_RE = re.compile(r"\[\[PRODUCTS:\s*([^\]]+)\]\]", re.IGNORECASE)
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatIn(BaseModel):
+    message: str
+    history: List[ChatMessage] = Field(default_factory=list)
+
+
+@api.post("/chat")
+async def chat(body: ChatIn):
+    if not OLLAMA_API_KEY:
+        raise HTTPException(500, "Chatbot non configuré (OLLAMA_API_KEY manquant)")
+
+    catalog = await build_catalog_context()
+    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT.format(catalog=catalog)}]
+    for m in body.history[-10:]:
+        if m.role in ("user", "assistant"):
+            messages.append({"role": m.role, "content": m.content})
+    messages.append({"role": "user", "content": body.message})
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post(
+                f"{OLLAMA_BASE_URL}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+                json={"model": OLLAMA_MODEL, "messages": messages, "stream": False},
+            )
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"Erreur Ollama: {e.response.status_code} {e.response.text[:200]}")
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"Erreur de connexion Ollama: {e}")
+
+    reply = data["choices"][0]["message"]["content"]
+
+    products = []
+    match = PRODUCTS_TAG_RE.search(reply)
+    if match:
+        reply = PRODUCTS_TAG_RE.sub("", reply).strip()
+        slugs = [s.strip() for s in match.group(1).split(",") if s.strip()][:3]
+        if slugs:
+            docs = await db.products.find(
+                {"slug": {"$in": slugs}, "active": True},
+                {"_id": 0, "name": 1, "slug": 1, "price": 1, "sale_price": 1, "images": 1, "categories": 1},
+            ).to_list(len(slugs))
+            by_slug = {d["slug"]: d for d in docs}
+            products = [by_slug[s] for s in slugs if s in by_slug]
+
+    return {"reply": reply, "products": products}
 
 
 # ----------------------------- Admin: Products CRUD -----------------------------

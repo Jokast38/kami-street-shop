@@ -4,6 +4,7 @@ import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CartDrawer from "@/components/CartDrawer";
+import ChatWidget from "@/components/ChatWidget";
 import Home from "@/pages/Home";
 import Shop from "@/pages/Shop";
 import ProductDetail from "@/pages/ProductDetail";
@@ -23,6 +24,7 @@ function StoreLayout({ children }) {
       <main className="flex-1 relative z-10">{children}</main>
       <Footer />
       <CartDrawer />
+      <ChatWidget />
     </div>
   );
 }
