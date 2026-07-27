@@ -9,6 +9,15 @@ import { useTheme } from "@/context/ThemeContext";
 
 const FALLBACK_HERO = "https://images.pexels.com/photos/13633037/pexels-photo-13633037.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=1600";
 
+const PARTNER_LOGOS = [
+  { name: "HT-T47", src: "/logo/logo-partner/logo-HT-T47.png" },
+  { name: "E-Zen", src: "/logo/logo-partner/logo-e-zen.png" },
+  { name: "Emoko", src: "/logo/logo-partner/logo-emoko.png" },
+  { name: "Jobobike", src: "/logo/logo-partner/logo-jobobike.png" },
+  { name: "Joyor", src: "/logo/logo-partner/logo-joyor.png" },
+  { name: "The One", src: "/logo/logo-partner/logo-the-one.png" },
+];
+
 export default function Home() {
   const { theme } = useTheme();
   const koalaSrc = theme === "dark" ? "/logo/logo-koala-black.png" : "/logo/logo-koala-offwhite.png";
@@ -203,6 +212,25 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* Partner brands */}
+      <section className="border-t border-border py-14">
+        <div className="max-w-7xl mx-auto px-6 mb-8">
+          <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Nos marques</div>
+          <h2 className="display text-2xl md:text-3xl font-black">Marques partenaires</h2>
+        </div>
+        <Marquee speed={40} gradient={false} pauseOnHover>
+          {PARTNER_LOGOS.map((logo) => (
+            <div key={logo.name} className="mx-12 flex items-center justify-center h-32">
+              <img
+                src={logo.src}
+                alt={logo.name}
+                className="h-full w-auto max-w-[280px] object-contain grayscale opacity-70 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
+              />
+            </div>
+          ))}
+        </Marquee>
+      </section>
     </>
   );
 }
