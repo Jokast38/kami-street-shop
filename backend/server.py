@@ -371,7 +371,7 @@ def qonto_authorize_url(state: str) -> str:
         "client_id": QONTO_CLIENT_ID,
         "redirect_uri": QONTO_REDIRECT_URI,
         "response_type": "code",
-        "scope": "payment_link.write",
+        "scope": "payment_link.write organization.read",
         "state": state,
     }
     return f"{QONTO_OAUTH_BASE}/oauth2/auth?{urlencode(params)}"
@@ -484,10 +484,28 @@ async def qonto_oauth_callback(code: Optional[str] = None, state: Optional[str] 
         logging.error(f"Qonto OAuth exchange error: {e}")
         return RedirectResponse(f"{FRONTEND_URL}/admin?qonto_error=oauth_failed")
 
-    # Kick off the payment-links provider connection (redirects the admin to Mollie to finish setup)
     settings = await get_payment_settings()
+    access_token = await get_qonto_access_token()
+
+    # Auto-fill the bank account id (an internal Qonto UUID, not the IBAN) if not already set
+    if not settings.get("qonto_bank_account_id"):
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.get(f"{QONTO_API_BASE}/v2/organization", headers=qonto_headers(access_token))
+                r.raise_for_status()
+                accounts = r.json().get("organization", {}).get("bank_accounts", [])
+            main_account = next((a for a in accounts if a.get("main")), accounts[0] if accounts else None)
+            if main_account:
+                settings["qonto_bank_account_id"] = main_account["id"]
+                await db.settings.update_one(
+                    {"id": "payment_settings"},
+                    {"$set": {"qonto_bank_account_id": main_account["id"]}},
+                )
+        except Exception as e:
+            logging.error(f"Qonto bank account lookup error: {e}")
+
+    # Kick off the payment-links provider connection (redirects the admin to Mollie to finish setup)
     try:
-        access_token = await get_qonto_access_token()
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.post(
                 f"{QONTO_API_BASE}/v2/payment_links/connections",

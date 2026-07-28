@@ -42,9 +42,9 @@ export default function ProductDetail() {
           <img src={images[activeImg]} alt={p.name} className="w-full h-full object-cover" />
         </motion.div>
         {images.length > 1 && (
-          <div className="flex gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-3">
             {images.map((im, i) => (
-              <button key={i} onClick={() => setActiveImg(i)} className={`w-20 h-20 border ${activeImg === i ? "border-accent" : "border-border"}`}>
+              <button key={i} onClick={() => setActiveImg(i)} className={`w-16 h-16 sm:w-20 sm:h-20 shrink-0 border ${activeImg === i ? "border-accent" : "border-border"}`}>
                 <img src={im} alt="" className="w-full h-full object-cover" />
               </button>
             ))}

@@ -221,11 +221,11 @@ export default function Home() {
         </div>
         <Marquee speed={40} gradient={false} pauseOnHover>
           {PARTNER_LOGOS.map((logo) => (
-            <div key={logo.name} className="mx-12 flex items-center justify-center h-32">
+            <div key={logo.name} className="mx-6 sm:mx-12 flex items-center justify-center h-20 sm:h-32">
               <img
                 src={logo.src}
                 alt={logo.name}
-                className="h-full w-auto max-w-[280px] object-contain grayscale opacity-70 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
+                className="h-full w-auto max-w-[160px] sm:max-w-[280px] object-contain grayscale opacity-70 hover:grayscale-0 hover:opacity-100 transition-all duration-300"
               />
             </div>
           ))}

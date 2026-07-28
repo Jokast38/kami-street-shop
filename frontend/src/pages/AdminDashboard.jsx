@@ -52,14 +52,14 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border sticky top-0 bg-background/90 backdrop-blur-xl z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="display text-xl font-black">KAMI<span className="text-accent">.</span>ADMIN</div>
-            <span className="text-xs text-muted-foreground">{email}</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="display text-xl font-black shrink-0">KAMI<span className="text-accent">.</span>ADMIN</div>
+            <span className="text-xs text-muted-foreground truncate hidden sm:inline">{email}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button onClick={syncAll} disabled={syncing} variant="outline" className="rounded-none" data-testid="sync-all-btn">
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} /> Synchroniser Woo + WP
+              <RefreshCw className={`w-4 h-4 sm:mr-2 ${syncing ? "animate-spin" : ""}`} /> <span className="hidden sm:inline">Synchroniser Woo + WP</span><span className="sm:hidden">Sync</span>
             </Button>
             <Button onClick={toggle} variant="ghost" size="icon">{theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}</Button>
             <Button onClick={doLogout} variant="ghost" size="icon" data-testid="admin-logout-btn"><LogOut className="w-4 h-4" /></Button>
@@ -67,7 +67,7 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard icon={<Package />} label="Produits" value={stats.total_products} testId="stat-products" />
@@ -77,12 +77,12 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs defaultValue="products">
-          <TabsList className="rounded-none">
-            <TabsTrigger value="products" data-testid="tab-products">Produits</TabsTrigger>
-            <TabsTrigger value="orders" data-testid="tab-orders">Commandes</TabsTrigger>
-            <TabsTrigger value="blog" data-testid="tab-blog">Blog</TabsTrigger>
-            <TabsTrigger value="banners" data-testid="tab-banners">Bannières</TabsTrigger>
-            <TabsTrigger value="payments" data-testid="tab-payments">Paiement</TabsTrigger>
+          <TabsList className="rounded-none w-full overflow-x-auto justify-start flex-nowrap">
+            <TabsTrigger value="products" data-testid="tab-products" className="shrink-0">Produits</TabsTrigger>
+            <TabsTrigger value="orders" data-testid="tab-orders" className="shrink-0">Commandes</TabsTrigger>
+            <TabsTrigger value="blog" data-testid="tab-blog" className="shrink-0">Blog</TabsTrigger>
+            <TabsTrigger value="banners" data-testid="tab-banners" className="shrink-0">Bannières</TabsTrigger>
+            <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>
           </TabsList>
 
           <TabsContent value="products" className="mt-6">
@@ -224,7 +224,7 @@ function ProductsPanel({ items, authAxios, reload }) {
             <div><Label>Nom</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} data-testid="product-form-name" /></div>
             <div><Label>Résumé</Label><Textarea rows={2} value={form.short_description} onChange={e => setForm({ ...form, short_description: e.target.value })} /></div>
             <div><Label>Description</Label><Textarea rows={5} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div><Label>Prix (€)</Label><Input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
               <div><Label>Prix promo</Label><Input type="number" step="0.01" value={form.sale_price || ""} onChange={e => setForm({ ...form, sale_price: e.target.value })} /></div>
               <div><Label>Stock</Label><Input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></div>
@@ -487,7 +487,7 @@ function PaymentsPanel({ authAxios }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
             <div><Label>Téléphone (E.164)</Label><Input placeholder="+33612345678" value={settings.qonto_phone_number} onChange={e => update({ qonto_phone_number: e.target.value })} /></div>
             <div><Label>Site web</Label><Input placeholder="https://kamistreet.fr" value={settings.qonto_website_url} onChange={e => update({ qonto_website_url: e.target.value })} /></div>
             <div><Label>ID compte bancaire Qonto</Label><Input value={settings.qonto_bank_account_id} onChange={e => update({ qonto_bank_account_id: e.target.value })} /></div>
