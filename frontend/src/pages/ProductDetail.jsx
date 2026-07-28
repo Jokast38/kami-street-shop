@@ -79,14 +79,14 @@ export default function ProductDetail() {
           </div>
         )}
 
-        <div className="flex items-center gap-4 mb-6">
-          <div className="flex items-center border border-border">
+        <div className="flex items-center gap-4 mb-6 flex-wrap">
+          <div className="flex items-center border border-border shrink-0">
             <button onClick={() => setQty(Math.max(1, qty - 1))} className="p-3 hover:bg-secondary"><Minus className="w-4 h-4" /></button>
             <span className="px-6 font-bold" data-testid="product-qty">{qty}</span>
             <button onClick={() => setQty(qty + 1)} className="p-3 hover:bg-secondary"><Plus className="w-4 h-4" /></button>
           </div>
-          <Button className="cta-primary rounded-none flex-1 h-12" onClick={handleAdd} data-testid="add-to-cart-btn">
-            <ShoppingBag className="w-4 h-4 mr-2" /> Ajouter au panier
+          <Button className="cta-primary rounded-none flex-1 min-w-0 h-12" onClick={handleAdd} data-testid="add-to-cart-btn">
+            <ShoppingBag className="w-4 h-4 mr-2 shrink-0" /> <span className="truncate">Ajouter au panier</span>
           </Button>
         </div>
 
