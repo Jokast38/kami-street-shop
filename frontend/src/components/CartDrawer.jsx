@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,21 @@ export default function CartDrawer() {
   const [step, setStep] = useState("cart"); // cart | info
   const [form, setForm] = useState({ customer_name: "", customer_email: "", line1: "", city: "", postal_code: "", country: "France" });
   const [loading, setLoading] = useState(false);
+  const [methods, setMethods] = useState({ stripe: true, qonto: false });
+  const [provider, setProvider] = useState("stripe");
+
+  useEffect(() => {
+    api.get("/payment-methods").then(r => {
+      setMethods(r.data);
+      if (!r.data.stripe && r.data.qonto) setProvider("qonto");
+    }).catch(() => {});
+  }, []);
 
   const submit = async () => {
     setLoading(true);
     try {
-      const { data } = await api.post("/checkout/session", {
+      const endpoint = provider === "qonto" ? "/checkout/qonto-session" : "/checkout/session";
+      const { data } = await api.post(endpoint, {
         items: items.map(i => ({
           product_id: i.product_id,
           variation_id: i.variation_id || null,
@@ -89,16 +99,39 @@ export default function CartDrawer() {
                 <div><Label>Ville</Label><Input data-testid="checkout-city" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
               </div>
               <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
+              {methods.stripe && methods.qonto && (
+                <div>
+                  <Label>Mode de paiement</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setProvider("stripe")}
+                      className={`border py-2 text-sm ${provider === "stripe" ? "border-accent text-accent" : "border-border"}`}
+                      data-testid="payment-method-stripe"
+                    >
+                      Carte (Stripe)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProvider("qonto")}
+                      className={`border py-2 text-sm ${provider === "qonto" ? "border-accent text-accent" : "border-border"}`}
+                      data-testid="payment-method-qonto"
+                    >
+                      Carte (Qonto)
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t space-y-2">
               <div className="flex justify-between font-bold"><span>Total</span><span className="display text-accent">{total.toFixed(2)} €</span></div>
               <Button
-                disabled={loading || !form.customer_email || !form.customer_name || !form.line1}
+                disabled={loading || !form.customer_email || !form.customer_name || !form.line1 || (!methods.stripe && !methods.qonto)}
                 className="w-full cta-primary rounded-none h-12"
                 onClick={submit}
                 data-testid="checkout-pay-btn"
               >
-                {loading ? "Redirection..." : "Payer avec Stripe"}
+                {loading ? "Redirection..." : `Payer avec ${provider === "qonto" ? "Qonto" : "Stripe"}`}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setStep("cart")}>Retour au panier</Button>
             </div>

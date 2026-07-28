@@ -7,7 +7,9 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
+from urllib.parse import urlencode
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -50,6 +52,14 @@ WP_BASE = f"https://{WP_SITE}" if not WP_SITE.startswith("http") else WP_SITE
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:27b")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "https://ollama.com")
+
+QONTO_CLIENT_ID = os.environ.get("QONTO_CLIENT_ID", "")
+QONTO_CLIENT_SECRET = os.environ.get("QONTO_CLIENT_SECRET", "")
+QONTO_ENV = os.environ.get("QONTO_ENV", "production")  # "production" | "sandbox"
+QONTO_STAGING_TOKEN = os.environ.get("QONTO_STAGING_TOKEN", "")
+QONTO_REDIRECT_URI = os.environ.get("QONTO_REDIRECT_URI") or f"{FRONTEND_URL}/api/qonto/oauth/callback"
+QONTO_OAUTH_BASE = "https://oauth-sandbox.staging.qonto.co" if QONTO_ENV == "sandbox" else "https://oauth.qonto.com"
+QONTO_API_BASE = "https://thirdparty.qonto.com"
 
 # MongoDB
 client = AsyncIOMotorClient(MONGO_URL)
@@ -175,6 +185,16 @@ class CheckoutIn(BaseModel):
     customer_name: str
     shipping_address: Dict[str, str]
     origin_url: str
+
+
+class PaymentSettingsIn(BaseModel):
+    stripe_enabled: bool = True
+    qonto_enabled: bool = False
+    qonto_business_description: str = ""
+    qonto_phone_number: str = ""
+    qonto_website_url: str = ""
+    qonto_bank_account_id: str = ""
+    qonto_vat_rate: str = "20.0"
 
 
 # ----------------------------- Brevo email -----------------------------
@@ -323,6 +343,189 @@ async def get_blog(slug: str):
 async def list_banners():
     docs = await db.banners.find({"active": True}, {"_id": 0}).sort("order", 1).to_list(50)
     return docs
+
+
+# ----------------------------- Payment settings & Qonto OAuth -----------------------------
+DEFAULT_PAYMENT_SETTINGS = {
+    "id": "payment_settings",
+    "stripe_enabled": True,
+    "qonto_enabled": False,
+    "qonto_business_description": "",
+    "qonto_phone_number": "",
+    "qonto_website_url": "",
+    "qonto_bank_account_id": "",
+    "qonto_vat_rate": "20.0",
+}
+
+
+async def get_payment_settings() -> dict:
+    doc = await db.settings.find_one({"id": "payment_settings"}, {"_id": 0})
+    if not doc:
+        doc = dict(DEFAULT_PAYMENT_SETTINGS)
+        await db.settings.insert_one(dict(doc))
+    return doc
+
+
+def qonto_authorize_url(state: str) -> str:
+    params = {
+        "client_id": QONTO_CLIENT_ID,
+        "redirect_uri": QONTO_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "payment_link.write",
+        "state": state,
+    }
+    return f"{QONTO_OAUTH_BASE}/oauth2/auth?{urlencode(params)}"
+
+
+async def qonto_token_request(data: dict) -> dict:
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(
+            f"{QONTO_OAUTH_BASE}/oauth2/token",
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def qonto_save_tokens(token_data: dict):
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 3600) - 60)
+    ).isoformat()
+    await db.qonto_tokens.update_one(
+        {"id": "qonto_tokens"},
+        {
+            "$set": {
+                "id": "qonto_tokens",
+                "access_token": token_data["access_token"],
+                "refresh_token": token_data.get("refresh_token"),
+                "expires_at": expires_at,
+            }
+        },
+        upsert=True,
+    )
+
+
+async def get_qonto_access_token() -> str:
+    doc = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
+    if not doc or not doc.get("access_token"):
+        raise HTTPException(400, "Qonto non connecté. Connectez-le depuis le dashboard admin.")
+    if datetime.now(timezone.utc) >= datetime.fromisoformat(doc["expires_at"]):
+        if not doc.get("refresh_token"):
+            raise HTTPException(400, "Session Qonto expirée. Reconnectez-la depuis le dashboard admin.")
+        token_data = await qonto_token_request(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": doc["refresh_token"],
+                "client_id": QONTO_CLIENT_ID,
+                "client_secret": QONTO_CLIENT_SECRET,
+            }
+        )
+        await qonto_save_tokens(token_data)
+        return token_data["access_token"]
+    return doc["access_token"]
+
+
+def qonto_headers(access_token: str) -> dict:
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    if QONTO_ENV == "sandbox" and QONTO_STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = QONTO_STAGING_TOKEN
+    return headers
+
+
+@api.get("/admin/settings/payments")
+async def admin_get_payment_settings(user=Depends(current_admin)):
+    settings = await get_payment_settings()
+    tokens = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
+    settings["qonto_connected"] = bool(tokens and tokens.get("access_token"))
+    return settings
+
+
+@api.put("/admin/settings/payments")
+async def admin_update_payment_settings(body: PaymentSettingsIn, user=Depends(current_admin)):
+    await db.settings.update_one({"id": "payment_settings"}, {"$set": body.model_dump()}, upsert=True)
+    return {"ok": True}
+
+
+@api.get("/payment-methods")
+async def public_payment_methods():
+    settings = await get_payment_settings()
+    tokens = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
+    qonto_ready = bool(settings.get("qonto_enabled") and tokens and tokens.get("access_token"))
+    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready}
+
+
+@api.get("/admin/qonto/authorize-url")
+async def admin_qonto_authorize_url(user=Depends(current_admin)):
+    if not QONTO_CLIENT_ID or not QONTO_CLIENT_SECRET:
+        raise HTTPException(500, "QONTO_CLIENT_ID / QONTO_CLIENT_SECRET manquants dans la configuration")
+    state = str(uuid.uuid4())
+    await db.qonto_oauth_state.update_one({"id": "state"}, {"$set": {"id": "state", "value": state}}, upsert=True)
+    return {"url": qonto_authorize_url(state)}
+
+
+@api.get("/qonto/oauth/callback")
+async def qonto_oauth_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    if error or not code:
+        return RedirectResponse(f"{FRONTEND_URL}/admin?qonto_error={error or 'missing_code'}")
+
+    try:
+        token_data = await qonto_token_request(
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": QONTO_CLIENT_ID,
+                "client_secret": QONTO_CLIENT_SECRET,
+                "redirect_uri": QONTO_REDIRECT_URI,
+            }
+        )
+        await qonto_save_tokens(token_data)
+    except Exception as e:
+        logging.error(f"Qonto OAuth exchange error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}/admin?qonto_error=oauth_failed")
+
+    # Kick off the payment-links provider connection (redirects the admin to Mollie to finish setup)
+    settings = await get_payment_settings()
+    try:
+        access_token = await get_qonto_access_token()
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(
+                f"{QONTO_API_BASE}/v2/payment_links/connections",
+                headers=qonto_headers(access_token),
+                json={
+                    "partner_callback_url": QONTO_REDIRECT_URI,
+                    "user_bank_account_id": settings.get("qonto_bank_account_id", ""),
+                    "user_phone_number": settings.get("qonto_phone_number", ""),
+                    "user_website_url": settings.get("qonto_website_url", ""),
+                    "business_description": settings.get("qonto_business_description", ""),
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+        connection_location = data.get("connection_location")
+        if connection_location:
+            return RedirectResponse(connection_location)
+    except Exception as e:
+        logging.error(f"Qonto connection init error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}/admin?qonto_error=connection_failed")
+
+    return RedirectResponse(f"{FRONTEND_URL}/admin?qonto_connected=1")
+
+
+@api.get("/admin/qonto/status")
+async def admin_qonto_status(user=Depends(current_admin)):
+    doc = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
+    if not doc:
+        return {"connected": False, "provider_status": "not_connected"}
+    try:
+        access_token = await get_qonto_access_token()
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{QONTO_API_BASE}/v2/payment_links/connections", headers=qonto_headers(access_token))
+            r.raise_for_status()
+            data = r.json()
+        return {"connected": True, "provider_status": data.get("status", "unknown")}
+    except Exception as e:
+        return {"connected": True, "provider_status": "error", "detail": str(e)}
 
 
 # ----------------------------- Chatbot (Ollama Cloud) -----------------------------
@@ -555,6 +758,9 @@ async def admin_stats(user=Depends(current_admin)):
 # ----------------------------- Checkout (Stripe) -----------------------------
 @api.post("/checkout/session")
 async def create_checkout_session(body: CheckoutIn):
+    settings = await get_payment_settings()
+    if not settings.get("stripe_enabled", True):
+        raise HTTPException(400, "Le paiement par carte (Stripe) n'est pas activé")
     if not body.items:
         raise HTTPException(400, "Panier vide")
     # Verify prices server-side
@@ -610,26 +816,42 @@ async def create_checkout_session(body: CheckoutIn):
     return {"checkout_url": session.url, "session_id": session.id, "order_no": order_no}
 
 
+async def _mark_order_paid(session_id_field: str, session_id_value: str):
+    await db.orders.update_one(
+        {session_id_field: session_id_value, "payment_status": {"$ne": "paid"}},
+        {"$set": {"payment_status": "paid", "status": "paid", "updated_at": now_iso()}},
+    )
+    order = await db.orders.find_one({session_id_field: session_id_value}, {"_id": 0})
+    await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order))
+    await send_email(ADMIN_EMAIL, "Admin Kami Street", f"Nouvelle commande #{order['order_no']}", order_email_html(order, admin=True))
+    return order
+
+
 @api.get("/checkout/status/{session_id}")
 async def checkout_status(session_id: str):
     order = await db.orders.find_one({"session_id": session_id}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Order not found")
-    # Fall-back sync with Stripe
     if order.get("payment_status") != "paid":
+        provider = order.get("provider", "stripe")
         try:
-            s = stripe.checkout.Session.retrieve(session_id)
-            if s.payment_status == "paid" or s.status == "complete":
-                await db.orders.update_one(
-                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
-                    {"$set": {"payment_status": "paid", "status": "paid", "updated_at": now_iso()}},
-                )
-                order = await db.orders.find_one({"session_id": session_id}, {"_id": 0})
-                # send emails
-                await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order))
-                await send_email(ADMIN_EMAIL, "Admin Kami Street", f"Nouvelle commande #{order['order_no']}", order_email_html(order, admin=True))
+            if provider == "qonto":
+                access_token = await get_qonto_access_token()
+                async with httpx.AsyncClient(timeout=30) as c:
+                    r = await c.get(
+                        f"{QONTO_API_BASE}/v2/payment_links/{session_id}/payments",
+                        headers=qonto_headers(access_token),
+                    )
+                    r.raise_for_status()
+                    payments = r.json().get("payments", [])
+                if any(p.get("status") == "paid" for p in payments):
+                    order = await _mark_order_paid("session_id", session_id)
+            else:
+                s = stripe.checkout.Session.retrieve(session_id)
+                if s.payment_status == "paid" or s.status == "complete":
+                    order = await _mark_order_paid("session_id", session_id)
         except Exception as e:
-            logging.error(f"Stripe status sync err: {e}")
+            logging.error(f"Payment status sync err ({order.get('provider', 'stripe')}): {e}")
     return {
         "order_no": order["order_no"],
         "status": order["status"],
@@ -651,14 +873,101 @@ async def stripe_webhook(request: Request):
     if t == "checkout.session.completed":
         order = await db.orders.find_one({"session_id": obj["id"]}, {"_id": 0})
         if order and order.get("payment_status") != "paid":
-            await db.orders.update_one(
-                {"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
-                {"$set": {"payment_status": "paid", "status": "paid", "updated_at": now_iso()}},
+            await _mark_order_paid("session_id", obj["id"])
+    return {"ok": True}
+
+
+# ----------------------------- Checkout (Qonto Payment Links) -----------------------------
+@api.post("/checkout/qonto-session")
+async def create_qonto_checkout(body: CheckoutIn):
+    settings = await get_payment_settings()
+    if not settings.get("qonto_enabled"):
+        raise HTTPException(400, "Le paiement par carte (Qonto) n'est pas activé")
+    if not body.items:
+        raise HTTPException(400, "Panier vide")
+
+    total = 0.0
+    items = []
+    for it in body.items:
+        prod = await db.products.find_one({"id": it.product_id}, {"_id": 0})
+        if not prod:
+            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
+        unit_price = prod.get("sale_price") or prod["price"]
+        if it.variation_id:
+            for v in prod.get("variations", []):
+                if v["id"] == it.variation_id:
+                    unit_price = v["price"]
+                    break
+        total += unit_price * it.quantity
+        items.append(
+            {
+                "title": prod["name"][:255],
+                "type": "good",
+                "quantity": it.quantity,
+                "unit_price": {"value": f"{unit_price:.2f}", "currency": "EUR"},
+                "vat_rate": settings.get("qonto_vat_rate", "20.0"),
+            }
+        )
+
+    order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_id = str(uuid.uuid4())
+
+    access_token = await get_qonto_access_token()
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(
+            f"{QONTO_API_BASE}/v2/payment_links",
+            headers=qonto_headers(access_token),
+            json={"payment_link": {"items": items, "reusable": False, "potential_payment_methods": ["credit_card"]}},
+        )
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Erreur Qonto: {r.status_code} {r.text[:200]}")
+        link = r.json()["payment_link"]
+
+    order = {
+        "id": order_id,
+        "order_no": order_no,
+        "items": [i.model_dump() for i in body.items],
+        "customer_email": body.customer_email,
+        "customer_name": body.customer_name,
+        "shipping_address": body.shipping_address,
+        "total": round(total, 2),
+        "status": "pending",
+        "payment_status": "pending",
+        "provider": "qonto",
+        "session_id": link["id"],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.orders.insert_one(order)
+    return {"checkout_url": link["url"], "session_id": link["id"], "order_no": order_no}
+
+
+@api.post("/qonto/webhook")
+async def qonto_webhook(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid payload")
+    payment_link_id = (payload.get("data") or {}).get("payment_link_id")
+    if not payment_link_id:
+        return {"ok": True}
+    order = await db.orders.find_one({"session_id": payment_link_id}, {"_id": 0})
+    if not order or order.get("payment_status") == "paid":
+        return {"ok": True}
+    # Re-verify server-side against Qonto's API rather than trusting the webhook payload directly
+    try:
+        access_token = await get_qonto_access_token()
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(
+                f"{QONTO_API_BASE}/v2/payment_links/{payment_link_id}/payments",
+                headers=qonto_headers(access_token),
             )
-            order["payment_status"] = "paid"
-            order["status"] = "paid"
-            await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order))
-            await send_email(ADMIN_EMAIL, "Admin Kami Street", f"Nouvelle commande #{order['order_no']}", order_email_html(order, admin=True))
+            r.raise_for_status()
+            payments = r.json().get("payments", [])
+        if any(p.get("status") == "paid" for p in payments):
+            await _mark_order_paid("session_id", payment_link_id)
+    except Exception as e:
+        logging.error(f"Qonto webhook sync err: {e}")
     return {"ok": True}
 
 

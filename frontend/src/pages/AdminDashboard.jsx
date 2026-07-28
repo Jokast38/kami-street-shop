@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
@@ -82,6 +82,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="orders" data-testid="tab-orders">Commandes</TabsTrigger>
             <TabsTrigger value="blog" data-testid="tab-blog">Blog</TabsTrigger>
             <TabsTrigger value="banners" data-testid="tab-banners">Bannières</TabsTrigger>
+            <TabsTrigger value="payments" data-testid="tab-payments">Paiement</TabsTrigger>
           </TabsList>
 
           <TabsContent value="products" className="mt-6">
@@ -95,6 +96,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="banners" className="mt-6">
             <BannersPanel items={banners} authAxios={authAxios} reload={loadAll} />
+          </TabsContent>
+          <TabsContent value="payments" className="mt-6">
+            <PaymentsPanel authAxios={authAxios} />
           </TabsContent>
         </Tabs>
       </div>
@@ -395,6 +399,114 @@ function BannersPanel({ items, authAxios, reload }) {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function PaymentsPanel({ authAxios }) {
+  const [settings, setSettings] = useState(null);
+  const [qontoStatus, setQontoStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  const load = useCallback(() => {
+    authAxios.get("/admin/settings/payments").then(r => setSettings(r.data)).catch(() => {});
+    authAxios.get("/admin/qonto/status").then(r => setQontoStatus(r.data)).catch(() => {});
+  }, [authAxios]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("qonto_connected")) {
+      toast.success("Qonto connecté avec succès");
+      window.history.replaceState({}, "", window.location.pathname);
+      load();
+    } else if (params.get("qonto_error")) {
+      toast.error(`Erreur de connexion Qonto : ${params.get("qonto_error")}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [load]);
+
+  if (!settings) return <div className="text-muted-foreground">Chargement...</div>;
+
+  const update = (patch) => setSettings({ ...settings, ...patch });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { qonto_connected, ...body } = settings;
+      await authAxios.put("/admin/settings/payments", body);
+      toast.success("Réglages de paiement enregistrés");
+      load();
+    } catch {
+      toast.error("Erreur lors de l'enregistrement");
+    } finally { setSaving(false); }
+  };
+
+  const connectQonto = async () => {
+    setConnecting(true);
+    try {
+      const { data } = await authAxios.get("/admin/qonto/authorize-url");
+      window.location.href = data.url;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Impossible de démarrer la connexion Qonto");
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl space-y-8">
+      <div>
+        <h2 className="display text-xl font-bold mb-4">Moyens de paiement</h2>
+
+        <div className="border border-border p-4 flex items-center justify-between mb-4">
+          <div>
+            <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Stripe (carte bancaire)</div>
+            <div className="text-xs text-muted-foreground mt-1">Encaissement via Stripe Checkout</div>
+          </div>
+          <Switch checked={settings.stripe_enabled} onCheckedChange={v => update({ stripe_enabled: v })} data-testid="stripe-enabled-switch" />
+        </div>
+
+        <div className="border border-border p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Qonto (carte bancaire)</div>
+              <div className="text-xs text-muted-foreground mt-1">Encaissement via Qonto Payment Links</div>
+            </div>
+            <Switch checked={settings.qonto_enabled} onCheckedChange={v => update({ qonto_enabled: v })} data-testid="qonto-enabled-switch" />
+          </div>
+
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            {qontoStatus?.connected && qontoStatus?.provider_status === "enabled" ? (
+              <span className="flex items-center gap-1 text-accent"><CheckCircle2 className="w-3.5 h-3.5" /> Connecté et actif</span>
+            ) : qontoStatus?.connected ? (
+              <span className="flex items-center gap-1 text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Connecté (statut : {qontoStatus.provider_status})</span>
+            ) : (
+              <span className="flex items-center gap-1 text-muted-foreground"><XCircle className="w-3.5 h-3.5" /> Non connecté</span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div><Label>Téléphone (E.164)</Label><Input placeholder="+33612345678" value={settings.qonto_phone_number} onChange={e => update({ qonto_phone_number: e.target.value })} /></div>
+            <div><Label>Site web</Label><Input placeholder="https://kamistreet.fr" value={settings.qonto_website_url} onChange={e => update({ qonto_website_url: e.target.value })} /></div>
+            <div><Label>ID compte bancaire Qonto</Label><Input value={settings.qonto_bank_account_id} onChange={e => update({ qonto_bank_account_id: e.target.value })} /></div>
+            <div><Label>Taux de TVA (%)</Label><Input value={settings.qonto_vat_rate} onChange={e => update({ qonto_vat_rate: e.target.value })} /></div>
+          </div>
+          <div className="mt-3">
+            <Label>Description de l'activité (min. 80 caractères, requis par Qonto)</Label>
+            <Textarea rows={3} value={settings.qonto_business_description} onChange={e => update({ qonto_business_description: e.target.value })} />
+          </div>
+
+          <Button onClick={connectQonto} disabled={connecting} variant="outline" className="rounded-none mt-4" data-testid="qonto-connect-btn">
+            {connecting ? "Redirection..." : qontoStatus?.connected ? "Reconnecter Qonto" : "Connecter Qonto"}
+          </Button>
+        </div>
+
+        <Button onClick={save} disabled={saving} className="cta-primary rounded-none w-full" data-testid="payment-settings-save">
+          {saving ? "Enregistrement..." : "Enregistrer les réglages"}
+        </Button>
+      </div>
     </div>
   );
 }
