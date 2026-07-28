@@ -2,6 +2,16 @@ import React from "react";
 import { Link } from "react-router-dom";
 import Marquee from "react-fast-marquee";
 import { useTheme } from "@/context/ThemeContext";
+import { FaTiktok, FaInstagram, FaLinkedin, FaSnapchatGhost, FaFacebook, FaYoutube } from "react-icons/fa";
+
+const SOCIAL_LINKS = [
+  { name: "TikTok", icon: FaTiktok, url: "https://www.tiktok.com/@kami_street_" },
+  { name: "Instagram", icon: FaInstagram, url: "https://www.instagram.com/kami_street_/?hl=fr" },
+  { name: "LinkedIn", icon: FaLinkedin, url: "https://www.linkedin.com/in/kami-street-7450833a2/" },
+  { name: "Snapchat", icon: FaSnapchatGhost, url: "https://www.snapchat.com/@vn.kb" },
+  { name: "Facebook", icon: FaFacebook, url: "https://www.facebook.com/profile.php?id=61584631330642&locale=fr_FR" },
+  { name: "YouTube", icon: FaYoutube, url: "https://www.youtube.com/channel/UChTepM7oFRNng5Cb9O-_ScQ" },
+];
 
 export default function Footer() {
   const { theme } = useTheme();
@@ -24,6 +34,21 @@ export default function Footer() {
           <p className="text-muted-foreground mt-4 max-w-md text-sm">
             Fatbikes, scooters, trottinettes électriques & accessoires. Une identité forte, une communauté libre.
           </p>
+          <div className="flex items-center gap-3 mt-6">
+            {SOCIAL_LINKS.map(({ name, icon: Icon, url }) => (
+              <a
+                key={name}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={name}
+                data-testid={`social-${name.toLowerCase()}`}
+                className="w-9 h-9 flex items-center justify-center border border-border text-muted-foreground hover:text-accent hover:border-accent transition-colors"
+              >
+                <Icon className="w-4 h-4" />
+              </a>
+            ))}
+          </div>
         </div>
         <div>
           <div className="text-sm font-bold uppercase mb-3 tracking-widest">Boutique</div>
