@@ -92,7 +92,7 @@ export default function Home() {
   return (
     <>
       <SEO
-        title="Kami Street | Fatbikes & Trottinettes Électriques"
+        title="Kami Street | Fatbikes & Trottinettes Électriques France"
         description="Kami Street, spécialiste des fatbikes, scooters et trottinettes électriques en France. Livraison 48h, garantie constructeur, accessoires et pièces détachées."
         path="/"
         jsonLd={FAQ_JSON_LD}
@@ -239,7 +239,7 @@ export default function Home() {
           <div className="grid md:grid-cols-3 gap-6">
             {blog.map((b) => (
               <Link key={b.id} to={`/blog/${b.slug}`} className="group border border-border block hover:border-accent transition-colors">
-                {b.featured_image && <div className="aspect-video overflow-hidden"><img src={b.featured_image} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /></div>}
+                {b.featured_image && <div className="aspect-video overflow-hidden"><img src={b.featured_image} alt={b.title?.replace(/<[^>]+>/g, "")} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /></div>}
                 <div className="p-5">
                   <div className="display font-bold text-lg line-clamp-2" dangerouslySetInnerHTML={{ __html: b.title }} />
                   <div className="text-sm text-muted-foreground line-clamp-2 mt-2">{b.excerpt}</div>

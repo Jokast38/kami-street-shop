@@ -40,9 +40,12 @@ import Blog from "@/pages/Blog";
 import BlogPost from "@/pages/BlogPost";
 import CheckoutSuccess from "@/pages/CheckoutSuccess";
 import CheckoutCancel from "@/pages/CheckoutCancel";
-import AdminLogin from "@/pages/AdminLogin";
-import AdminDashboard from "@/pages/AdminDashboard";
 import RequireAdmin from "@/components/RequireAdmin";
+
+// Admin-only routes are code-split out of the public storefront bundle: visitors
+// browsing the shop never need to download the admin dashboard's JS.
+const AdminLogin = React.lazy(() => import("@/pages/AdminLogin"));
+const AdminDashboard = React.lazy(() => import("@/pages/AdminDashboard"));
 
 function StoreLayout({ children }) {
   return (
@@ -70,8 +73,22 @@ export default function App() {
       <Route path="/blog/:slug" element={<StoreLayout><BlogPost /></StoreLayout>} />
       <Route path="/checkout/success" element={<StoreLayout><CheckoutSuccess /></StoreLayout>} />
       <Route path="/checkout/cancel" element={<StoreLayout><CheckoutCancel /></StoreLayout>} />
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
+      <Route
+        path="/admin/login"
+        element={
+          <React.Suspense fallback={null}>
+            <AdminLogin />
+          </React.Suspense>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <React.Suspense fallback={null}>
+            <RequireAdmin><AdminDashboard /></RequireAdmin>
+          </React.Suspense>
+        }
+      />
     </Routes>
   );
 }

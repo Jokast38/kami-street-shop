@@ -73,7 +73,7 @@ export default function ProductDetail() {
           <div className="flex flex-wrap gap-2 mt-3">
             {images.map((im, i) => (
               <button key={i} onClick={() => setActiveImg(i)} className={`w-16 h-16 sm:w-20 sm:h-20 shrink-0 border ${activeImg === i ? "border-accent" : "border-border"}`}>
-                <img src={im} alt="" className="w-full h-full object-cover" />
+                <img src={im} alt={`${p.name} — vue ${i + 1}`} className="w-full h-full object-cover" />
               </button>
             ))}
           </div>

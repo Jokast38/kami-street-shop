@@ -67,7 +67,7 @@ export default function CartDrawer() {
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {items.map((i, idx) => (
                 <div key={idx} className="flex gap-4 border-b pb-4" data-testid={`cart-item-${idx}`}>
-                  {i.image && <img src={i.image} alt="" className="w-20 h-24 object-cover" />}
+                  {i.image && <img src={i.image} alt={i.name} className="w-20 h-24 object-cover" />}
                   <div className="flex-1">
                     <div className="font-semibold text-sm">{i.name}</div>
                     <div className="text-xs text-muted-foreground">{i.price.toFixed(2)} €</div>

@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { motion } from "framer-motion";
 import SEO from "@/components/SEO";
 
+const stripHtml = (html) => (html || "").replace(/<[^>]+>/g, "").trim();
+
 export default function Blog() {
   const [posts, setPosts] = useState([]);
 
@@ -33,7 +35,7 @@ export default function Blog() {
               <Link to={`/blog/${b.slug}`} className="block group border border-border hover:border-accent transition-colors" data-testid={`blog-card-${b.slug}`}>
                 {b.featured_image && (
                   <div className="aspect-video overflow-hidden">
-                    <img src={b.featured_image} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img src={b.featured_image} alt={stripHtml(b.title)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   </div>
                 )}
                 <div className="p-5">

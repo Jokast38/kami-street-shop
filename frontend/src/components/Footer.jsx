@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Marquee from "react-fast-marquee";
 import { useTheme } from "@/context/ThemeContext";
 import { FaTiktok, FaInstagram, FaLinkedin, FaSnapchatGhost, FaFacebook, FaYoutube } from "react-icons/fa";
+import { MapPin, Phone } from "lucide-react";
 
 const SOCIAL_LINKS = [
   { name: "TikTok", icon: FaTiktok, url: "https://www.tiktok.com/@kami_street_" },
@@ -28,7 +29,7 @@ export default function Footer() {
           <img src={tickerKoalaSrc} alt="" className="h-5 w-auto" /> KAMI STREET · ELECTRIC FATBIKE · SCOOTERS & TROTTINETTES · ACCESSOIRES · MADE IN FRANCE ·
         </span>
       </Marquee>
-      <div className="max-w-7xl mx-auto px-6 py-16 grid md:grid-cols-4 gap-10">
+      <div className="max-w-7xl mx-auto px-6 py-16 grid md:grid-cols-5 gap-10">
         <div className="md:col-span-2">
           <img src={logoSrc} alt="Kami Street" className="h-9 w-auto" />
           <p className="text-muted-foreground mt-4 max-w-md text-sm">
@@ -61,6 +62,19 @@ export default function Footer() {
           <div className="text-sm font-bold uppercase mb-3 tracking-widest">Compte</div>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li><Link to="/admin/login" className="hover:text-accent">Admin</Link></li>
+          </ul>
+        </div>
+        <div>
+          <div className="text-sm font-bold uppercase mb-3 tracking-widest">Contact</div>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            <li className="flex items-start gap-2">
+              <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>59 Av. Joffre, 93800 Épinay-sur-Seine, France</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <Phone className="w-4 h-4 shrink-0" />
+              <a href="tel:+33180907251" className="hover:text-accent">+33 1 80 90 72 51</a>
+            </li>
           </ul>
         </div>
       </div>

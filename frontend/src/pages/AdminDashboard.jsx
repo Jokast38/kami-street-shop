@@ -203,7 +203,7 @@ function ProductsPanel({ items, authAxios, reload }) {
               const wcStatus = p.wc_status || (p.active ? "publish" : "draft");
               return (
                 <tr key={p.id} className="border-t border-border" data-testid={`admin-product-${p.id}`}>
-                  <td className="p-3"><img src={p.images?.[0]} alt="" className="w-12 h-12 object-cover" /></td>
+                  <td className="p-3"><img src={p.images?.[0]} alt={p.name} className="w-12 h-12 object-cover" /></td>
                   <td className="p-3 font-medium">{p.name}</td>
                   <td className="p-3">{p.price?.toFixed(2)} €</td>
                   <td className="p-3">{p.stock}</td>
@@ -318,7 +318,7 @@ function BlogPanel({ items, authAxios, reload }) {
       <div className="grid md:grid-cols-2 gap-4">
         {items.map(b => (
           <div key={b.id} className="border border-border p-4 flex gap-4">
-            {b.featured_image && <img src={b.featured_image} alt="" className="w-24 h-24 object-cover" />}
+            {b.featured_image && <img src={b.featured_image} alt={b.title?.replace(/<[^>]+>/g, "")} className="w-24 h-24 object-cover" />}
             <div className="flex-1">
               <div className="font-bold" dangerouslySetInnerHTML={{ __html: b.title }} />
               <div className="text-xs text-muted-foreground line-clamp-2 mt-1">{b.excerpt}</div>
@@ -373,7 +373,7 @@ function BannersPanel({ items, authAxios, reload }) {
       <div className="grid md:grid-cols-2 gap-4">
         {items.map(b => (
           <div key={b.id} className="border border-border overflow-hidden">
-            {b.image && <img src={b.image} alt="" className="w-full aspect-video object-cover" />}
+            {b.image && <img src={b.image} alt={b.title} className="w-full aspect-video object-cover" />}
             <div className="p-4">
               <div className="font-bold">{b.title}</div>
               <div className="text-xs text-muted-foreground">{b.subtitle}</div>
