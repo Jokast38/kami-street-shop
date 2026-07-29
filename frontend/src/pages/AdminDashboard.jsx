@@ -503,6 +503,14 @@ function PaymentsPanel({ authAxios }) {
           </Button>
         </div>
 
+        <div className="border border-border p-4 flex items-center justify-between mb-4">
+          <div>
+            <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Mollie (carte bancaire)</div>
+            <div className="text-xs text-muted-foreground mt-1">Encaissement direct via l'API Mollie (clé API, sans OAuth)</div>
+          </div>
+          <Switch checked={settings.mollie_enabled} onCheckedChange={v => update({ mollie_enabled: v })} data-testid="mollie-enabled-switch" />
+        </div>
+
         <Button onClick={save} disabled={saving} className="cta-primary rounded-none w-full" data-testid="payment-settings-save">
           {saving ? "Enregistrement..." : "Enregistrer les réglages"}
         </Button>

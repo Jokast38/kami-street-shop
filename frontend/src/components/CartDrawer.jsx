@@ -13,20 +13,27 @@ export default function CartDrawer() {
   const [step, setStep] = useState("cart"); // cart | info
   const [form, setForm] = useState({ customer_name: "", customer_email: "", line1: "", city: "", postal_code: "", country: "France" });
   const [loading, setLoading] = useState(false);
-  const [methods, setMethods] = useState({ stripe: true, qonto: false });
+  const [methods, setMethods] = useState({ stripe: true, qonto: false, mollie: false });
   const [provider, setProvider] = useState("stripe");
+
+  const PROVIDER_LABELS = { stripe: "Stripe", qonto: "Qonto", mollie: "Mollie" };
+  const PROVIDER_ENDPOINTS = { stripe: "/checkout/session", qonto: "/checkout/qonto-session", mollie: "/checkout/mollie-session" };
+  const enabledProviders = Object.keys(PROVIDER_LABELS).filter(p => methods[p]);
 
   useEffect(() => {
     api.get("/payment-methods").then(r => {
       setMethods(r.data);
-      if (!r.data.stripe && r.data.qonto) setProvider("qonto");
+      if (!r.data.stripe) {
+        const first = ["qonto", "mollie"].find(p => r.data[p]);
+        if (first) setProvider(first);
+      }
     }).catch(() => {});
   }, []);
 
   const submit = async () => {
     setLoading(true);
     try {
-      const endpoint = provider === "qonto" ? "/checkout/qonto-session" : "/checkout/session";
+      const endpoint = PROVIDER_ENDPOINTS[provider];
       const { data } = await api.post(endpoint, {
         items: items.map(i => ({
           product_id: i.product_id,
@@ -99,26 +106,21 @@ export default function CartDrawer() {
                 <div><Label>Ville</Label><Input data-testid="checkout-city" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
               </div>
               <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
-              {methods.stripe && methods.qonto && (
+              {enabledProviders.length > 1 && (
                 <div>
                   <Label>Mode de paiement</Label>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setProvider("stripe")}
-                      className={`border py-2 text-sm ${provider === "stripe" ? "border-accent text-accent" : "border-border"}`}
-                      data-testid="payment-method-stripe"
-                    >
-                      Carte (Stripe)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProvider("qonto")}
-                      className={`border py-2 text-sm ${provider === "qonto" ? "border-accent text-accent" : "border-border"}`}
-                      data-testid="payment-method-qonto"
-                    >
-                      Carte (Qonto)
-                    </button>
+                  <div className={`grid gap-2 mt-1`} style={{ gridTemplateColumns: `repeat(${enabledProviders.length}, minmax(0, 1fr))` }}>
+                    {enabledProviders.map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setProvider(p)}
+                        className={`border py-2 text-sm ${provider === p ? "border-accent text-accent" : "border-border"}`}
+                        data-testid={`payment-method-${p}`}
+                      >
+                        Carte ({PROVIDER_LABELS[p]})
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -126,12 +128,12 @@ export default function CartDrawer() {
             <div className="p-6 border-t space-y-2">
               <div className="flex justify-between font-bold"><span>Total</span><span className="display text-accent">{total.toFixed(2)} €</span></div>
               <Button
-                disabled={loading || !form.customer_email || !form.customer_name || !form.line1 || (!methods.stripe && !methods.qonto)}
+                disabled={loading || !form.customer_email || !form.customer_name || !form.line1 || enabledProviders.length === 0}
                 className="w-full cta-primary rounded-none h-12"
                 onClick={submit}
                 data-testid="checkout-pay-btn"
               >
-                {loading ? "Redirection..." : `Payer avec ${provider === "qonto" ? "Qonto" : "Stripe"}`}
+                {loading ? "Redirection..." : `Payer avec ${PROVIDER_LABELS[provider]}`}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setStep("cart")}>Retour au panier</Button>
             </div>

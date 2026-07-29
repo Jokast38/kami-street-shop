@@ -61,6 +61,14 @@ QONTO_REDIRECT_URI = os.environ.get("QONTO_REDIRECT_URI") or f"{FRONTEND_URL}/ap
 QONTO_OAUTH_BASE = "https://oauth-sandbox.staging.qonto.co" if QONTO_ENV == "sandbox" else "https://oauth.qonto.com"
 QONTO_API_BASE = "https://thirdparty.qonto.com"
 
+MOLLIE_API_KEY = os.environ.get("MOLLIE_API_KEY", "")
+MOLLIE_MODE = os.environ.get("MOLLIE_MODE", "test")  # "test" | "live"
+MOLLIE_API_BASE = "https://api.mollie.com/v2"
+
+# Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
+# host if not set explicitly, since that one is already known to be publicly reachable.
+BACKEND_URL = os.environ.get("BACKEND_URL") or QONTO_REDIRECT_URI.split("/api/")[0]
+
 # MongoDB
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -195,6 +203,7 @@ class PaymentSettingsIn(BaseModel):
     qonto_website_url: str = ""
     qonto_bank_account_id: str = ""
     qonto_vat_rate: str = "20.0"
+    mollie_enabled: bool = False
 
 
 # ----------------------------- Brevo email -----------------------------
@@ -355,6 +364,7 @@ DEFAULT_PAYMENT_SETTINGS = {
     "qonto_website_url": "",
     "qonto_bank_account_id": "",
     "qonto_vat_rate": "20.0",
+    "mollie_enabled": False,
 }
 
 
@@ -452,7 +462,8 @@ async def public_payment_methods():
     settings = await get_payment_settings()
     tokens = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
     qonto_ready = bool(settings.get("qonto_enabled") and tokens and tokens.get("access_token"))
-    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready}
+    mollie_ready = bool(settings.get("mollie_enabled") and MOLLIE_API_KEY)
+    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready, "mollie": mollie_ready}
 
 
 @api.get("/admin/qonto/authorize-url")
@@ -864,6 +875,16 @@ async def checkout_status(session_id: str):
                     payments = r.json().get("payments", [])
                 if any(p.get("status") == "paid" for p in payments):
                     order = await _mark_order_paid("session_id", session_id)
+            elif provider == "mollie":
+                async with httpx.AsyncClient(timeout=30) as c:
+                    r = await c.get(
+                        f"{MOLLIE_API_BASE}/payments/{order['mollie_payment_id']}",
+                        headers={"Authorization": f"Bearer {MOLLIE_API_KEY}"},
+                    )
+                    r.raise_for_status()
+                    payment = r.json()
+                if payment.get("status") == "paid":
+                    order = await _mark_order_paid("session_id", session_id)
             else:
                 s = stripe.checkout.Session.retrieve(session_id)
                 if s.payment_status == "paid" or s.status == "complete":
@@ -986,6 +1007,97 @@ async def qonto_webhook(request: Request):
             await _mark_order_paid("session_id", payment_link_id)
     except Exception as e:
         logging.error(f"Qonto webhook sync err: {e}")
+    return {"ok": True}
+
+
+# ----------------------------- Checkout (Mollie, direct API key) -----------------------------
+@api.post("/checkout/mollie-session")
+async def create_mollie_checkout(body: CheckoutIn):
+    settings = await get_payment_settings()
+    if not settings.get("mollie_enabled") or not MOLLIE_API_KEY:
+        raise HTTPException(400, "Le paiement par carte (Mollie) n'est pas activé")
+    if not body.items:
+        raise HTTPException(400, "Panier vide")
+
+    total = 0.0
+    for it in body.items:
+        prod = await db.products.find_one({"id": it.product_id}, {"_id": 0})
+        if not prod:
+            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
+        unit_price = prod.get("sale_price") or prod["price"]
+        if it.variation_id:
+            for v in prod.get("variations", []):
+                if v["id"] == it.variation_id:
+                    unit_price = v["price"]
+                    break
+        total += unit_price * it.quantity
+
+    order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_id = str(uuid.uuid4())
+
+    payment_payload = {
+        "amount": {"currency": "EUR", "value": f"{total:.2f}"},
+        "description": f"Commande {order_no} — Kami Street",
+        "redirectUrl": f"{body.origin_url}/checkout/success?session_id={order_id}",
+        "metadata": {"order_id": order_id, "order_no": order_no},
+    }
+    # Mollie rejects webhookUrl values it can't reach from the internet (e.g. localhost in dev).
+    # /checkout/status already re-verifies against Mollie's API as a fallback, so this is safe to omit locally.
+    if not re.search(r"localhost|127\.0\.0\.1", BACKEND_URL):
+        payment_payload["webhookUrl"] = f"{BACKEND_URL}/api/mollie/webhook"
+
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(
+            f"{MOLLIE_API_BASE}/payments",
+            headers={"Authorization": f"Bearer {MOLLIE_API_KEY}", "Content-Type": "application/json"},
+            json=payment_payload,
+        )
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Erreur Mollie: {r.status_code} {r.text[:200]}")
+        payment = r.json()
+
+    order = {
+        "id": order_id,
+        "order_no": order_no,
+        "items": [i.model_dump() for i in body.items],
+        "customer_email": body.customer_email,
+        "customer_name": body.customer_name,
+        "shipping_address": body.shipping_address,
+        "total": round(total, 2),
+        "status": "pending",
+        "payment_status": "pending",
+        "provider": "mollie",
+        "session_id": order_id,
+        "mollie_payment_id": payment["id"],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.orders.insert_one(order)
+    return {"checkout_url": payment["_links"]["checkout"]["href"], "session_id": order_id, "order_no": order_no}
+
+
+@api.post("/mollie/webhook")
+async def mollie_webhook(request: Request):
+    form = await request.form()
+    payment_id = form.get("id")
+    if not payment_id:
+        return {"ok": True}
+    order = await db.orders.find_one({"mollie_payment_id": payment_id}, {"_id": 0})
+    if not order or order.get("payment_status") == "paid":
+        return {"ok": True}
+    # Re-verify server-side against Mollie's API rather than trusting the webhook call alone
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(
+                f"{MOLLIE_API_BASE}/payments/{payment_id}",
+                headers={"Authorization": f"Bearer {MOLLIE_API_KEY}"},
+            )
+            r.raise_for_status()
+            payment = r.json()
+        if payment.get("status") == "paid":
+            await _mark_order_paid("session_id", order["session_id"])
+    except Exception as e:
+        logging.error(f"Mollie webhook sync err: {e}")
     return {"ok": True}
 
 
