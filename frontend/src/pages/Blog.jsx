@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { motion } from "framer-motion";
+import SEO from "@/components/SEO";
 
 export default function Blog() {
   const [posts, setPosts] = useState([]);
@@ -12,6 +13,11 @@ export default function Blog() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
+      <SEO
+        title="Le Journal Kami Street — Actus Mobilité Électrique"
+        description="Conseils, actualités et guides d'achat sur la mobilité électrique : fatbikes, scooters et trottinettes. Le journal Kami Street pour bien choisir."
+        path="/blog"
+      />
       <div className="mb-10">
         <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Editorial</div>
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="blog-title">Le Journal</h1>

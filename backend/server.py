@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 import re
 import html
@@ -48,6 +49,8 @@ WP_USER = os.environ["WORDPRESS_USER"]
 WP_APP_PWD = os.environ["WORDPRESS_APP_PASSWORD_K"]
 
 WP_BASE = f"https://{WP_SITE}" if not WP_SITE.startswith("http") else WP_SITE
+
+WC_SYNC_INTERVAL_MINUTES = int(os.environ.get("WC_SYNC_INTERVAL_MINUTES", "30"))
 
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:27b")
@@ -256,6 +259,36 @@ def order_email_html(order: dict, admin: bool = False) -> str:
     """
 
 
+async def _auto_sync_loop():
+    """Periodically re-syncs WooCommerce products/categories and WordPress posts,
+    so admins don't need to click "Synchroniser" manually for routine updates."""
+    while True:
+        await asyncio.sleep(WC_SYNC_INTERVAL_MINUTES * 60)
+        try:
+            woo = await sync_woo(None)
+            orders = await sync_woo_orders(None)
+            wp = await sync_wp(None)
+            await db.settings.update_one(
+                {"id": "sync_status"},
+                {"$set": {
+                    "id": "sync_status",
+                    "last_sync_at": now_iso(),
+                    "last_sync_ok": True,
+                    "woocommerce_imported": woo.get("imported", 0),
+                    "orders_imported": orders.get("imported", 0),
+                    "wordpress_imported": wp.get("imported", 0),
+                }},
+                upsert=True,
+            )
+        except Exception as e:
+            logging.error(f"Auto-sync failed: {e}")
+            await db.settings.update_one(
+                {"id": "sync_status"},
+                {"$set": {"id": "sync_status", "last_sync_at": now_iso(), "last_sync_ok": False, "last_sync_error": str(e)}},
+                upsert=True,
+            )
+
+
 # ----------------------------- Startup: seed admin -----------------------------
 @app.on_event("startup")
 async def startup():
@@ -275,6 +308,8 @@ async def startup():
     await db.products.create_index("slug", unique=True, sparse=True)
     await db.blog.create_index("slug", unique=True, sparse=True)
     await db.orders.create_index("order_no", unique=True, sparse=True)
+
+    app.state.sync_task = asyncio.create_task(_auto_sync_loop())
 
 
 # ----------------------------- Auth routes -----------------------------
@@ -1194,6 +1229,73 @@ async def sync_woo(user=Depends(current_admin)):
         raise HTTPException(500, f"Woo API error: {e.response.status_code} {e.response.text[:200]}")
 
 
+WC_ORDER_STATUS_MAP = {
+    "pending": "pending",
+    "on-hold": "pending",
+    "processing": "paid",
+    "completed": "shipped",
+    "cancelled": "cancelled",
+    "refunded": "cancelled",
+    "failed": "cancelled",
+    "trash": "cancelled",
+}
+
+
+@api.post("/admin/sync/woocommerce-orders")
+async def sync_woo_orders(user=Depends(current_admin)):
+    """Imports existing WooCommerce orders (placed on the old site) so they show up
+    alongside orders placed through this storefront. Idempotent: keyed by woo_order_id."""
+    imported = 0
+    page = 1
+    try:
+        while True:
+            items = await _woo_get("orders", {"per_page": 100, "page": page, "orderby": "date", "order": "desc"})
+            if not items:
+                break
+            for o in items:
+                billing = o.get("billing") or {}
+                shipping = o.get("shipping") or billing
+                customer_name = " ".join(filter(None, [billing.get("first_name"), billing.get("last_name")])).strip() or "Client WooCommerce"
+                doc = {
+                    "id": f"wc-{o['id']}",
+                    "woo_order_id": o["id"],
+                    "order_no": o.get("number") and f"WC-{o['number']}" or f"WC-{o['id']}",
+                    "items": [
+                        {
+                            "product_id": str(li.get("product_id", "")),
+                            "variation_id": str(li["variation_id"]) if li.get("variation_id") else None,
+                            "name": li.get("name", ""),
+                            "price": float(li.get("price") or 0),
+                            "quantity": li.get("quantity", 1),
+                            "image": (li.get("image") or {}).get("src"),
+                        }
+                        for li in o.get("line_items", [])
+                    ],
+                    "customer_email": billing.get("email") or "",
+                    "customer_name": customer_name,
+                    "shipping_address": {
+                        "line1": shipping.get("address_1", ""),
+                        "city": shipping.get("city", ""),
+                        "postal_code": shipping.get("postcode", ""),
+                        "country": shipping.get("country", ""),
+                    },
+                    "total": float(o.get("total") or 0),
+                    "status": WC_ORDER_STATUS_MAP.get(o.get("status"), "pending"),
+                    "payment_status": "paid" if o.get("status") in ("processing", "completed") else "pending",
+                    "provider": "woocommerce",
+                    "created_at": o.get("date_created") or now_iso(),
+                    "updated_at": now_iso(),
+                }
+                await db.orders.update_one({"woo_order_id": o["id"]}, {"$set": doc}, upsert=True)
+                imported += 1
+            if len(items) < 100:
+                break
+            page += 1
+        return {"imported": imported, "status": "ok"}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(500, f"Woo orders API error: {e.response.status_code} {e.response.text[:200]}")
+
+
 @api.post("/admin/sync/wordpress")
 async def sync_wp(user=Depends(current_admin)):
     imported = 0
@@ -1263,15 +1365,68 @@ async def sync_media(user=Depends(current_admin)):
 @api.post("/admin/sync/all")
 async def sync_all(user=Depends(current_admin)):
     woo = await sync_woo(user)
+    orders = await sync_woo_orders(user)
     wp = await sync_wp(user)
     media = await sync_media(user)
-    return {"woocommerce": woo, "wordpress": wp, "media": media}
+    await db.settings.update_one(
+        {"id": "sync_status"},
+        {"$set": {
+            "id": "sync_status",
+            "last_sync_at": now_iso(),
+            "last_sync_ok": True,
+            "woocommerce_imported": woo.get("imported", 0),
+            "orders_imported": orders.get("imported", 0),
+            "wordpress_imported": wp.get("imported", 0),
+        }},
+        upsert=True,
+    )
+    return {"woocommerce": woo, "orders": orders, "wordpress": wp, "media": media}
+
+
+@api.get("/admin/sync/status")
+async def sync_status(user=Depends(current_admin)):
+    doc = await db.settings.find_one({"id": "sync_status"}, {"_id": 0})
+    return doc or {"last_sync_at": None, "last_sync_ok": None}
 
 
 # ----------------------------- Health -----------------------------
 @api.get("/")
 async def root():
     return {"message": "Kami Street API", "status": "ok"}
+
+
+# ----------------------------- Sitemap (dynamic) -----------------------------
+@app.get("/sitemap.xml")
+async def sitemap():
+    from fastapi.responses import Response
+
+    urls = [f"{FRONTEND_URL}/", f"{FRONTEND_URL}/shop", f"{FRONTEND_URL}/blog"]
+    products = await db.products.find({"active": True}, {"slug": 1, "updated_at": 1, "_id": 0}).to_list(5000)
+    for p in products:
+        urls.append((f"{FRONTEND_URL}/product/{p['slug']}", p.get("updated_at")))
+    posts = await db.blog.find({"published": True}, {"slug": 1, "published_at": 1, "_id": 0}).to_list(5000)
+    for b in posts:
+        urls.append((f"{FRONTEND_URL}/blog/{b['slug']}", b.get("published_at")))
+
+    entries = []
+    for item in urls:
+        if isinstance(item, tuple):
+            loc, lastmod = item
+        else:
+            loc, lastmod = item, None
+        entry = f"  <url>\n    <loc>{loc}</loc>\n"
+        if lastmod:
+            entry += f"    <lastmod>{lastmod[:10]}</lastmod>\n"
+        entry += "  </url>"
+        entries.append(entry)
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(entries)
+        + "\n</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")
 
 
 # ----------------------------- Include & CORS -----------------------------
@@ -1289,4 +1444,7 @@ logging.basicConfig(level=logging.INFO)
 
 @app.on_event("shutdown")
 async def shutdown():
+    task = getattr(app.state, "sync_task", None)
+    if task:
+        task.cancel()
     client.close()

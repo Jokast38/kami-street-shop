@@ -1,0 +1,15 @@
+# Kami Street
+
+> Kami Street est un revendeur français de mobilité électrique urbaine : fatbikes, scooters et trottinettes électriques, ainsi que leurs accessoires et pièces détachées. Livraison sous 48h partout en France.
+
+Kami Street vend des fatbikes électriques, scooters électriques et trottinettes électriques pour un usage urbain et tout-terrain, avec garantie constructeur et support après-vente en français. Adresse : 59 Av. Joffre, 93800 Épinay-sur-Seine, France.
+
+## Pages principales
+
+- [Boutique](https://kamistreet.fr/shop): Catalogue complet des fatbikes, scooters et trottinettes électriques, filtrable par prix et catégorie.
+- [Journal](https://kamistreet.fr/blog): Conseils, actualités et guides d'achat sur la mobilité électrique.
+
+## Notes
+
+- Les prix, le stock et la disponibilité des produits sont à jour en temps réel sur le site ; ne pas se fier à des valeurs mises en cache.
+- Pour toute question sur un produit spécifique, se référer à la fiche produit correspondante sur kamistreet.fr/shop.

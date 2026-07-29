@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useCart } from "@/context/CartContext";
 import { ShoppingBag, Minus, Plus } from "lucide-react";
 import { motion } from "framer-motion";
+import SEO, { SITE_URL } from "@/components/SEO";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -24,6 +25,25 @@ export default function ProductDetail() {
   const currentPrice = selVar ? selVar.price : (p.sale_price || p.price);
   const images = p.images?.length ? p.images : ["https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=800"];
 
+  const shortDesc = p.short_description || (p.description || "").slice(0, 150);
+  const metaDescription = `${p.name} au meilleur prix chez Kami Street : ${currentPrice.toFixed(2)} €. ${shortDesc}`.slice(0, 160);
+
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": p.name,
+    "description": p.short_description || p.description || p.name,
+    "image": images,
+    "sku": p.id,
+    "offers": {
+      "@type": "Offer",
+      "url": `${SITE_URL}/product/${p.slug}`,
+      "priceCurrency": "EUR",
+      "price": currentPrice,
+      "availability": (p.stock || 0) > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+    },
+  };
+
   const handleAdd = () => {
     addItem({
       product_id: p.id,
@@ -37,6 +57,14 @@ export default function ProductDetail() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12 grid md:grid-cols-2 gap-12">
+      <SEO
+        title={p.name}
+        description={metaDescription}
+        path={`/product/${p.slug}`}
+        image={images[0]}
+        type="product"
+        jsonLd={productJsonLd}
+      />
       <div>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="aspect-square bg-secondary overflow-hidden border border-border">
           <img src={images[activeImg]} alt={p.name} className="w-full h-full object-cover" />

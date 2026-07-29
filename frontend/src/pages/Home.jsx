@@ -5,6 +5,8 @@ import { ArrowRight, ArrowLeft, Zap, ShoppingBag, Truck } from "lucide-react";
 import Marquee from "react-fast-marquee";
 import { api } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
+import SEO from "@/components/SEO";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useTheme } from "@/context/ThemeContext";
 
 const FALLBACK_HERO = "https://images.pexels.com/photos/13633037/pexels-photo-13633037.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=1600";
@@ -17,6 +19,35 @@ const PARTNER_LOGOS = [
   { name: "Joyor", src: "/logo/logo-partner/logo-joyor.png" },
   { name: "The One", src: "/logo/logo-partner/logo-the-one.png" },
 ];
+
+const FAQ_ITEMS = [
+  {
+    q: "Quel est le délai de livraison Kami Street ?",
+    a: "Toutes nos commandes de fatbikes, scooters et trottinettes électriques sont expédiées sous 48h partout en France métropolitaine.",
+  },
+  {
+    q: "Les produits Kami Street sont-ils garantis ?",
+    a: "Oui, chaque fatbike, scooter et trottinette électrique vendu sur Kami Street bénéficie de la garantie constructeur, ainsi que d'un support après-vente en français.",
+  },
+  {
+    q: "Puis-je payer en plusieurs fois ?",
+    a: "Le paiement s'effectue en ligne par carte bancaire de manière sécurisée. Contactez-nous pour connaître les options de paiement en plusieurs fois disponibles selon le produit.",
+  },
+  {
+    q: "Proposez-vous des pièces détachées et accessoires ?",
+    a: "Oui, Kami Street propose une gamme d'accessoires et de pièces détachées compatibles avec nos fatbikes, scooters et trottinettes électriques.",
+  },
+];
+
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": FAQ_ITEMS.map(({ q, a }) => ({
+    "@type": "Question",
+    "name": q,
+    "acceptedAnswer": { "@type": "Answer", "text": a },
+  })),
+};
 
 export default function Home() {
   const { theme } = useTheme();
@@ -60,6 +91,12 @@ export default function Home() {
 
   return (
     <>
+      <SEO
+        title="Kami Street | Fatbikes & Trottinettes Électriques"
+        description="Kami Street, spécialiste des fatbikes, scooters et trottinettes électriques en France. Livraison 48h, garantie constructeur, accessoires et pièces détachées."
+        path="/"
+        jsonLd={FAQ_JSON_LD}
+      />
       {/* HERO */}
       <section className="relative overflow-hidden border-b border-border min-h-[85vh] flex items-center">
         <AnimatePresence mode="sync">
@@ -230,6 +267,20 @@ export default function Home() {
             </div>
           ))}
         </Marquee>
+      </section>
+
+      {/* FAQ */}
+      <section className="max-w-4xl mx-auto px-6 py-16 border-t border-border">
+        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// FAQ</div>
+        <h2 className="display text-2xl md:text-3xl font-black mb-8">Questions fréquentes</h2>
+        <Accordion type="single" collapsible>
+          {FAQ_ITEMS.map((item, i) => (
+            <AccordionItem key={i} value={`faq-${i}`}>
+              <AccordionTrigger className="text-left">{item.q}</AccordionTrigger>
+              <AccordionContent className="text-muted-foreground">{item.a}</AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
       </section>
     </>
   );

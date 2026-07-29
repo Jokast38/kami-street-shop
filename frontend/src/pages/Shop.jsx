@@ -4,6 +4,7 @@ import ProductCard from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import SEO from "@/components/SEO";
 
 export default function Shop() {
   const [products, setProducts] = useState([]);
@@ -31,6 +32,11 @@ export default function Shop() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
+      <SEO
+        title="Boutique Fatbikes & Trottinettes Électriques"
+        description="Découvrez toute la gamme Kami Street : fatbikes, scooters et trottinettes électriques. Filtrez par prix et catégorie, livraison 48h partout en France."
+        path="/shop"
+      />
       <div className="mb-10">
         <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Catalog</div>
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="shop-title">Boutique</h1>

@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [blog, setBlog] = useState([]);
   const [banners, setBanners] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
 
   const loadAll = useCallback(() => {
     authAxios.get("/admin/stats").then(r => setStats(r.data)).catch(() => {});
@@ -32,6 +33,7 @@ export default function AdminDashboard() {
     authAxios.get("/admin/orders").then(r => setOrders(r.data)).catch(() => {});
     authAxios.get("/admin/blog").then(r => setBlog(r.data)).catch(() => {});
     authAxios.get("/admin/banners").then(r => setBanners(r.data)).catch(() => {});
+    authAxios.get("/admin/sync/status").then(r => setSyncStatus(r.data)).catch(() => {});
   }, [authAxios]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -58,6 +60,11 @@ export default function AdminDashboard() {
             <span className="text-xs text-muted-foreground truncate hidden sm:inline">{email}</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {syncStatus?.last_sync_at && (
+              <span className="text-xs text-muted-foreground hidden md:inline" data-testid="last-sync-info">
+                {syncStatus.last_sync_ok === false ? "⚠ Échec" : "Auto-sync"} · {new Date(syncStatus.last_sync_at).toLocaleString("fr-FR")}
+              </span>
+            )}
             <Button onClick={syncAll} disabled={syncing} variant="outline" className="rounded-none" data-testid="sync-all-btn">
               <RefreshCw className={`w-4 h-4 sm:mr-2 ${syncing ? "animate-spin" : ""}`} /> <span className="hidden sm:inline">Synchroniser Woo + WP</span><span className="sm:hidden">Sync</span>
             </Button>

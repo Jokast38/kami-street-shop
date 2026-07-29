@@ -1,10 +1,38 @@
 import React from "react";
+import { Helmet } from "react-helmet-async";
 import { Routes, Route } from "react-router-dom";
 import TopBar from "@/components/TopBar";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CartDrawer from "@/components/CartDrawer";
 import ChatWidget from "@/components/ChatWidget";
+import { SITE_URL } from "@/components/SEO";
+
+const ORGANIZATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SportingGoodsStore",
+  "name": "Kami Street",
+  "url": SITE_URL,
+  "logo": `${SITE_URL}/logo/kami-street-black.png`,
+  "image": `${SITE_URL}/logo/kami-street-black.png`,
+  "telephone": "+33180907251",
+  "priceRange": "€€",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "59 Av. Joffre",
+    "postalCode": "93800",
+    "addressLocality": "Épinay-sur-Seine",
+    "addressCountry": "FR",
+  },
+  "sameAs": [
+    "https://www.tiktok.com/@kami_street_",
+    "https://www.instagram.com/kami_street_/?hl=fr",
+    "https://www.linkedin.com/in/kami-street-7450833a2/",
+    "https://www.snapchat.com/@vn.kb",
+    "https://www.facebook.com/profile.php?id=61584631330642&locale=fr_FR",
+    "https://www.youtube.com/channel/UChTepM7oFRNng5Cb9O-_ScQ",
+  ],
+};
 import Home from "@/pages/Home";
 import Shop from "@/pages/Shop";
 import ProductDetail from "@/pages/ProductDetail";
@@ -19,6 +47,9 @@ import RequireAdmin from "@/components/RequireAdmin";
 function StoreLayout({ children }) {
   return (
     <div className="min-h-screen flex flex-col grain">
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify(ORGANIZATION_JSON_LD)}</script>
+      </Helmet>
       <TopBar />
       <Navbar />
       <main className="flex-1 relative z-10">{children}</main>
