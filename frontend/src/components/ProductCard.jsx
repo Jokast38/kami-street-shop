@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import KlarnaBadge from "@/components/KlarnaBadge";
 
 export default function ProductCard({ p, index = 0 }) {
   const price = p.sale_price || p.price;
@@ -32,6 +33,9 @@ export default function ProductCard({ p, index = 0 }) {
               <span className="text-muted-foreground line-through text-sm">{p.price.toFixed(2)} €</span>
             )}
             <span className="text-accent font-black display">{price.toFixed(2)} €</span>
+          </div>
+          <div className="mt-2">
+            <KlarnaBadge price={price} />
           </div>
         </div>
       </Link>

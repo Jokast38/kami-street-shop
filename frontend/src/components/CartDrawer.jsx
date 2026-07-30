@@ -7,6 +7,7 @@ import { X, Minus, Plus, ArrowRight } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import KlarnaBadge from "@/components/KlarnaBadge";
 
 export default function CartDrawer() {
   const { items, open, setOpen, removeItem, updateQty, total, clear } = useCart();
@@ -86,6 +87,7 @@ export default function CartDrawer() {
                 <span>Total</span>
                 <span className="display text-accent" data-testid="cart-total">{total.toFixed(2)} €</span>
               </div>
+              <KlarnaBadge price={total} />
               <Button className="w-full cta-primary rounded-none h-12" onClick={() => setStep("info")} data-testid="cart-checkout-btn">
                 Passer commande <ArrowRight className="w-4 h-4 ml-2" />
               </Button>

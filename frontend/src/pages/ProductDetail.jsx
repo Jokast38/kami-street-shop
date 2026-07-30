@@ -7,6 +7,7 @@ import { useCart } from "@/context/CartContext";
 import { ShoppingBag, Minus, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import SEO, { SITE_URL } from "@/components/SEO";
+import KlarnaBadge from "@/components/KlarnaBadge";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -86,6 +87,9 @@ export default function ProductDetail() {
         <div className="flex items-center gap-3 mb-6">
           {p.sale_price && <span className="text-muted-foreground line-through">{p.price.toFixed(2)} €</span>}
           <span className="display text-3xl font-black text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
+        </div>
+        <div className="mb-6">
+          <KlarnaBadge price={currentPrice} size="lg" />
         </div>
         {p.short_description && <p className="text-muted-foreground mb-6">{p.short_description}</p>}
 

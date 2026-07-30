@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import SEO from "@/components/SEO";
+import { SiKlarna } from "react-icons/si";
+import { usePaymentMethods } from "@/context/PaymentMethodsContext";
 
 export default function Shop() {
   const [products, setProducts] = useState([]);
@@ -13,6 +15,7 @@ export default function Shop() {
   const [search, setSearch] = useState("");
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
+  const { klarna } = usePaymentMethods();
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -41,6 +44,15 @@ export default function Shop() {
         <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Catalog</div>
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="shop-title">Boutique</h1>
       </div>
+
+      {klarna && (
+        <div className="flex items-center gap-3 border border-accent/40 bg-accent/10 px-5 py-3 mb-8" data-testid="klarna-shop-banner">
+          <SiKlarna className="w-6 h-6 shrink-0" style={{ color: "#FFB3C7" }} />
+          <span className="text-sm font-semibold">
+            Payez en 3x sans frais avec Klarna, disponible sur tous nos produits.
+          </span>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-[240px_1fr] gap-8">
         <aside className="space-y-6">

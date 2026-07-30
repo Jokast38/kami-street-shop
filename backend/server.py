@@ -3,12 +3,13 @@ import asyncio
 import logging
 import re
 import html
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from urllib.parse import urlencode
 from dotenv import load_dotenv
@@ -21,6 +22,8 @@ import jwt
 import httpx
 import stripe
 from slugify import slugify
+from pymongo import ReturnDocument
+from invoicing import generate_invoice_pdf
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -207,6 +210,24 @@ class PaymentSettingsIn(BaseModel):
     qonto_bank_account_id: str = ""
     qonto_vat_rate: str = "20.0"
     mollie_enabled: bool = False
+    klarna_enabled: bool = False
+
+
+class InvoiceItemIn(BaseModel):
+    name: str
+    quantity: int = 1
+    unit_price: float = 0.0
+
+
+class InvoiceIn(BaseModel):
+    order_id: Optional[str] = None
+    order_no: Optional[str] = None
+    customer_name: str
+    customer_email: EmailStr
+    billing_address: Dict[str, str] = Field(default_factory=dict)
+    items: List[InvoiceItemIn] = Field(default_factory=list)
+    tax_rate: float = 20.0
+    notes: str = ""
 
 
 # ----------------------------- Brevo email -----------------------------
@@ -400,6 +421,7 @@ DEFAULT_PAYMENT_SETTINGS = {
     "qonto_bank_account_id": "",
     "qonto_vat_rate": "20.0",
     "mollie_enabled": False,
+    "klarna_enabled": False,
 }
 
 
@@ -498,7 +520,8 @@ async def public_payment_methods():
     tokens = await db.qonto_tokens.find_one({"id": "qonto_tokens"}, {"_id": 0})
     qonto_ready = bool(settings.get("qonto_enabled") and tokens and tokens.get("access_token"))
     mollie_ready = bool(settings.get("mollie_enabled") and MOLLIE_API_KEY)
-    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready, "mollie": mollie_ready}
+    klarna_ready = bool(mollie_ready and settings.get("klarna_enabled"))
+    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready, "mollie": mollie_ready, "klarna": klarna_ready}
 
 
 @api.get("/admin/qonto/authorize-url")
@@ -799,7 +822,116 @@ async def update_order_status(oid: str, body: Dict[str, str], user=Depends(curre
     r = await db.orders.update_one({"id": oid}, {"$set": {"status": new_status, "updated_at": now_iso()}})
     if r.matched_count == 0:
         raise HTTPException(404, "Not found")
+    if new_status == "paid":
+        order = await db.orders.find_one({"id": oid}, {"_id": 0})
+        if order:
+            await ensure_invoice_for_order(order)
     return {"ok": True}
+
+
+# ----------------------------- Admin: Invoices -----------------------------
+async def next_invoice_number() -> str:
+    year = datetime.now(timezone.utc).year
+    doc = await db.settings.find_one_and_update(
+        {"id": f"invoice_counter_{year}"},
+        {"$inc": {"value": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return f"FAC-{year}-{doc['value']:04d}"
+
+
+async def ensure_invoice_for_order(order: dict) -> Optional[dict]:
+    """Auto-creates an invoice the first time an order becomes paid. No-op if one already exists."""
+    existing = await db.invoices.find_one({"order_id": order["id"]}, {"_id": 0})
+    if existing:
+        return existing
+    invoice = {
+        "id": str(uuid.uuid4()),
+        "invoice_no": await next_invoice_number(),
+        "order_id": order["id"],
+        "order_no": order.get("order_no"),
+        "customer_name": order.get("customer_name", ""),
+        "customer_email": order.get("customer_email", ""),
+        "billing_address": order.get("shipping_address", {}),
+        "items": [
+            {"name": i.get("name", ""), "quantity": i.get("quantity", 1), "unit_price": i.get("price", 0)}
+            for i in order.get("items", [])
+        ],
+        "tax_rate": 20.0,
+        "notes": "",
+        "status": "issued",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.invoices.insert_one(dict(invoice))
+    return invoice
+
+
+@api.get("/admin/invoices")
+async def list_invoices(user=Depends(current_admin)):
+    return await db.invoices.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
+@api.get("/admin/invoices/{iid}")
+async def get_invoice(iid: str, user=Depends(current_admin)):
+    doc = await db.invoices.find_one({"id": iid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Facture introuvable")
+    return doc
+
+
+@api.post("/admin/invoices")
+async def create_invoice(body: InvoiceIn, user=Depends(current_admin)):
+    invoice = body.model_dump()
+    invoice["id"] = str(uuid.uuid4())
+    invoice["invoice_no"] = await next_invoice_number()
+    invoice["status"] = "issued"
+    invoice["created_at"] = now_iso()
+    invoice["updated_at"] = now_iso()
+    await db.invoices.insert_one(dict(invoice))
+    return clean(invoice)
+
+
+@api.post("/admin/invoices/from-order/{order_id}")
+async def create_invoice_from_order(order_id: str, user=Depends(current_admin)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Commande introuvable")
+    existing = await db.invoices.find_one({"order_id": order_id}, {"_id": 0})
+    if existing:
+        raise HTTPException(400, "Une facture existe déjà pour cette commande")
+    invoice = await ensure_invoice_for_order(order)
+    return invoice
+
+
+@api.put("/admin/invoices/{iid}")
+async def update_invoice(iid: str, body: InvoiceIn, user=Depends(current_admin)):
+    upd = body.model_dump()
+    upd["updated_at"] = now_iso()
+    r = await db.invoices.update_one({"id": iid}, {"$set": upd})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Facture introuvable")
+    return {"ok": True}
+
+
+@api.delete("/admin/invoices/{iid}")
+async def delete_invoice(iid: str, user=Depends(current_admin)):
+    await db.invoices.delete_one({"id": iid})
+    return {"ok": True}
+
+
+@api.get("/admin/invoices/{iid}/pdf")
+async def invoice_pdf(iid: str, user=Depends(current_admin)):
+    invoice = await db.invoices.find_one({"id": iid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(404, "Facture introuvable")
+    pdf_bytes = generate_invoice_pdf(invoice)
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={invoice['invoice_no']}.pdf"},
+    )
 
 
 @api.get("/admin/stats")
@@ -888,6 +1020,7 @@ async def _mark_order_paid(session_id_field: str, session_id_value: str):
     order = await db.orders.find_one({session_id_field: session_id_value}, {"_id": 0})
     await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order))
     await send_email(ADMIN_EMAIL, "Admin Kami Street", f"Nouvelle commande #{order['order_no']}", order_email_html(order, admin=True))
+    await ensure_invoice_for_order(order)
     return order
 
 
@@ -1288,6 +1421,8 @@ async def sync_woo_orders(user=Depends(current_admin)):
                 }
                 await db.orders.update_one({"woo_order_id": o["id"]}, {"$set": doc}, upsert=True)
                 imported += 1
+                if doc["payment_status"] == "paid":
+                    await ensure_invoice_for_order(doc)
             if len(items) < 100:
                 break
             page += 1

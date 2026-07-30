@@ -9,6 +9,7 @@ import App from "@/App";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { PaymentMethodsProvider } from "@/context/PaymentMethodsContext";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: false } },
@@ -21,12 +22,14 @@ root.render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <AuthProvider>
-            <CartProvider>
-              <BrowserRouter>
-                <App />
-                <Toaster position="top-right" richColors closeButton />
-              </BrowserRouter>
-            </CartProvider>
+            <PaymentMethodsProvider>
+              <CartProvider>
+                <BrowserRouter>
+                  <App />
+                  <Toaster position="top-right" richColors closeButton />
+                </BrowserRouter>
+              </CartProvider>
+            </PaymentMethodsProvider>
           </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>

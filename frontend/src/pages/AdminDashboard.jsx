@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
@@ -24,6 +24,7 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [blog, setBlog] = useState([]);
   const [banners, setBanners] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
 
@@ -33,6 +34,7 @@ export default function AdminDashboard() {
     authAxios.get("/admin/orders").then(r => setOrders(r.data)).catch(() => {});
     authAxios.get("/admin/blog").then(r => setBlog(r.data)).catch(() => {});
     authAxios.get("/admin/banners").then(r => setBanners(r.data)).catch(() => {});
+    authAxios.get("/admin/invoices").then(r => setInvoices(r.data)).catch(() => {});
     authAxios.get("/admin/sync/status").then(r => setSyncStatus(r.data)).catch(() => {});
   }, [authAxios]);
 
@@ -90,6 +92,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="blog" data-testid="tab-blog" className="shrink-0">Blog</TabsTrigger>
             <TabsTrigger value="banners" data-testid="tab-banners" className="shrink-0">Bannières</TabsTrigger>
             <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>
+            <TabsTrigger value="invoices" data-testid="tab-invoices" className="shrink-0">Factures</TabsTrigger>
           </TabsList>
 
           <TabsContent value="products" className="mt-6">
@@ -106,6 +109,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="payments" className="mt-6">
             <PaymentsPanel authAxios={authAxios} />
+          </TabsContent>
+          <TabsContent value="invoices" className="mt-6">
+            <InvoicesPanel items={invoices} orders={orders} authAxios={authAxios} reload={loadAll} />
           </TabsContent>
         </Tabs>
       </div>
@@ -518,10 +524,200 @@ function PaymentsPanel({ authAxios }) {
           <Switch checked={settings.mollie_enabled} onCheckedChange={v => update({ mollie_enabled: v })} data-testid="mollie-enabled-switch" />
         </div>
 
+        <div className="border border-border p-4 flex items-center justify-between mb-4">
+          <div>
+            <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Klarna (paiement en plusieurs fois)</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Affiche le badge "Payez en 3x avec Klarna" sur la boutique. Activez d'abord Klarna dans votre espace Mollie (Paiements → Moyens de paiement) avant d'activer ce switch.
+            </div>
+          </div>
+          <Switch checked={settings.klarna_enabled} onCheckedChange={v => update({ klarna_enabled: v })} data-testid="klarna-enabled-switch" />
+        </div>
+
         <Button onClick={save} disabled={saving} className="cta-primary rounded-none w-full" data-testid="payment-settings-save">
           {saving ? "Enregistrement..." : "Enregistrer les réglages"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function computeInvoiceTotals(invoice) {
+  const subtotal = (invoice.items || []).reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0) * (parseInt(i.quantity) || 0), 0);
+  const tax = subtotal * ((parseFloat(invoice.tax_rate) || 0) / 100);
+  return { subtotal, tax, total: subtotal + tax };
+}
+
+function InvoicesPanel({ items, orders, authAxios, reload }) {
+  const [editing, setEditing] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const emptyInvoice = {
+    order_id: null, order_no: "", customer_name: "", customer_email: "",
+    billing_address: { line1: "", city: "", postal_code: "", country: "France" },
+    items: [{ name: "", quantity: 1, unit_price: 0 }],
+    tax_rate: 20.0, notes: "",
+  };
+  const [form, setForm] = useState(emptyInvoice);
+
+  const paidOrdersWithoutInvoice = orders.filter(
+    o => o.payment_status === "paid" && !items.some(inv => inv.order_id === o.id)
+  );
+
+  const openNew = () => { setEditing(null); setForm(emptyInvoice); setOpen(true); };
+  const openEdit = (inv) => {
+    setEditing(inv);
+    setForm({
+      ...inv,
+      billing_address: inv.billing_address || { line1: "", city: "", postal_code: "", country: "France" },
+      items: inv.items?.length ? inv.items : [{ name: "", quantity: 1, unit_price: 0 }],
+    });
+    setOpen(true);
+  };
+
+  const updateItem = (idx, patch) => {
+    const newItems = form.items.map((it, i) => (i === idx ? { ...it, ...patch } : it));
+    setForm({ ...form, items: newItems });
+  };
+  const addItem = () => setForm({ ...form, items: [...form.items, { name: "", quantity: 1, unit_price: 0 }] });
+  const removeItem = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+
+  const save = async () => {
+    const body = {
+      ...form,
+      items: form.items.map(i => ({ name: i.name, quantity: parseInt(i.quantity) || 1, unit_price: parseFloat(i.unit_price) || 0 })),
+      tax_rate: parseFloat(form.tax_rate) || 0,
+    };
+    try {
+      if (editing) await authAxios.put(`/admin/invoices/${editing.id}`, body);
+      else await authAxios.post(`/admin/invoices`, body);
+      toast.success("Facture enregistrée");
+      setOpen(false); reload();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("Supprimer cette facture ?")) return;
+    await authAxios.delete(`/admin/invoices/${id}`);
+    toast.success("Supprimée"); reload();
+  };
+
+  const createFromOrder = async (orderId) => {
+    try {
+      await authAxios.post(`/admin/invoices/from-order/${orderId}`);
+      toast.success("Facture générée depuis la commande");
+      reload();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const downloadPdf = async (inv) => {
+    setDownloadingId(inv.id);
+    try {
+      const res = await authAxios.get(`/admin/invoices/${inv.id}/pdf`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      window.open(url, "_blank");
+    } catch (e) {
+      toast.error("Erreur lors du téléchargement");
+    } finally { setDownloadingId(null); }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        <h2 className="display text-xl font-bold">Factures ({items.length})</h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          {paidOrdersWithoutInvoice.length > 0 && (
+            <Select onValueChange={createFromOrder}>
+              <SelectTrigger className="w-56 h-9 rounded-none text-xs" data-testid="invoice-from-order-select">
+                <SelectValue placeholder="Générer depuis une commande..." />
+              </SelectTrigger>
+              <SelectContent>
+                {paidOrdersWithoutInvoice.map(o => (
+                  <SelectItem key={o.id} value={o.id}>{o.order_no} — {o.customer_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button onClick={openNew} className="cta-primary rounded-none" data-testid="new-invoice-btn"><Plus className="w-4 h-4 mr-2" />Nouvelle</Button>
+        </div>
+      </div>
+
+      <div className="border border-border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary"><tr>
+            <th className="text-left p-3">N°</th><th className="text-left p-3">Client</th>
+            <th className="text-left p-3">Commande</th><th className="text-left p-3">Total TTC</th>
+            <th className="text-left p-3">Date</th><th></th>
+          </tr></thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">Aucune facture</td></tr>
+            ) : items.map(inv => {
+              const { total } = computeInvoiceTotals(inv);
+              return (
+                <tr key={inv.id} className="border-t border-border" data-testid={`admin-invoice-${inv.id}`}>
+                  <td className="p-3 font-mono text-xs">{inv.invoice_no}</td>
+                  <td className="p-3">{inv.customer_name}<br /><span className="text-xs text-muted-foreground">{inv.customer_email}</span></td>
+                  <td className="p-3 text-xs">{inv.order_no || "—"}</td>
+                  <td className="p-3 font-bold">{total.toFixed(2)} €</td>
+                  <td className="p-3 text-xs">{inv.created_at ? new Date(inv.created_at).toLocaleDateString("fr-FR") : ""}</td>
+                  <td className="p-3 text-right whitespace-nowrap">
+                    <Button size="icon" variant="ghost" onClick={() => downloadPdf(inv)} disabled={downloadingId === inv.id} data-testid={`invoice-download-${inv.id}`}>
+                      <Download className="w-4 h-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(inv)}><Edit className="w-4 h-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => del(inv.id)}><Trash2 className="w-4 h-4" /></Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editing ? `Modifier ${editing.invoice_no}` : "Nouvelle facture"}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Nom du client</Label><Input value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} /></div>
+              <div><Label>Email</Label><Input type="email" value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })} /></div>
+            </div>
+            <div><Label>Adresse</Label><Input value={form.billing_address.line1} onChange={e => setForm({ ...form, billing_address: { ...form.billing_address, line1: e.target.value } })} /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div><Label>Code postal</Label><Input value={form.billing_address.postal_code} onChange={e => setForm({ ...form, billing_address: { ...form.billing_address, postal_code: e.target.value } })} /></div>
+              <div><Label>Ville</Label><Input value={form.billing_address.city} onChange={e => setForm({ ...form, billing_address: { ...form.billing_address, city: e.target.value } })} /></div>
+              <div><Label>Pays</Label><Input value={form.billing_address.country} onChange={e => setForm({ ...form, billing_address: { ...form.billing_address, country: e.target.value } })} /></div>
+            </div>
+
+            <div>
+              <Label>Articles</Label>
+              <div className="space-y-2 mt-2">
+                {form.items.map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_60px_90px_auto] gap-2 items-center">
+                    <Input placeholder="Description" value={it.name} onChange={e => updateItem(idx, { name: e.target.value })} />
+                    <Input type="number" placeholder="Qté" value={it.quantity} onChange={e => updateItem(idx, { quantity: e.target.value })} />
+                    <Input type="number" step="0.01" placeholder="Prix unit." value={it.unit_price} onChange={e => updateItem(idx, { unit_price: e.target.value })} />
+                    <Button size="icon" variant="ghost" onClick={() => removeItem(idx)}><Trash2 className="w-4 h-4" /></Button>
+                  </div>
+                ))}
+                <Button size="sm" variant="outline" className="rounded-none" onClick={addItem}><Plus className="w-3 h-3 mr-1" />Ligne</Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Taux de TVA (%)</Label><Input type="number" step="0.1" value={form.tax_rate} onChange={e => setForm({ ...form, tax_rate: e.target.value })} /></div>
+              <div className="flex items-end pb-2 text-sm text-muted-foreground">
+                Total TTC : <span className="font-bold text-accent ml-1">{computeInvoiceTotals(form).total.toFixed(2)} €</span>
+              </div>
+            </div>
+            <div><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+
+            <Button onClick={save} className="cta-primary rounded-none w-full" data-testid="invoice-form-save">Enregistrer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
