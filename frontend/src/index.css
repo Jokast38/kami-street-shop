@@ -127,4 +127,16 @@
 .prose-ks h1, .prose-ks h2, .prose-ks h3 { font-family: 'Unbounded', sans-serif; margin-top: 1.5em; margin-bottom: 0.5em; }
 .prose-ks p { margin-bottom: 1em; }
 .prose-ks img { max-width: 100%; height: auto; margin: 1em 0; border-radius: 4px; }
+
+/* Category descriptions come from WooCommerce as raw HTML: normalize heading sizes and
+   keep any embedded tables/media from overflowing on small screens. Text stays centered
+   to match the page's centered intro layout. */
+.category-description {
+  text-align: center;
+}
+.category-description h2 { font-size: 1.25rem; }
+.category-description h3 { font-size: 1.1rem; }
+.category-description img { margin-left: auto; margin-right: auto; }
+.category-description table { display: block; max-width: 100%; overflow-x: auto; margin: 0 auto; }
+.category-description iframe, .category-description video { max-width: 100%; }
 .prose-ks a { color: hsl(var(--accent)); text-decoration: underline; }

@@ -11,7 +11,9 @@ import { usePaymentMethods } from "@/context/PaymentMethodsContext";
 export default function Shop() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [category, setCategory] = useState(null);
+  const [brand, setBrand] = useState(null);
   const [search, setSearch] = useState("");
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
@@ -21,14 +23,16 @@ export default function Shop() {
     setLoading(true);
     const params = {};
     if (category) params.category = category;
+    if (brand) params.brand = brand;
     if (search) params.search = search;
     if (priceRange[0] > 0) params.min_price = priceRange[0];
     if (priceRange[1] < 5000) params.max_price = priceRange[1];
     api.get("/products", { params }).then(r => setProducts(r.data)).finally(() => setLoading(false));
-  }, [category, search, priceRange]);
+  }, [category, brand, search, priceRange]);
 
   useEffect(() => {
     api.get("/categories").then(r => setCategories(r.data));
+    api.get("/brands").then(r => setBrands(r.data)).catch(() => {});
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -78,6 +82,19 @@ export default function Shop() {
               ))}
             </div>
           </div>
+          {brands.length > 0 && (
+            <div>
+              <div className="text-sm uppercase tracking-widest font-bold mb-3">Marques</div>
+              <div className="flex flex-wrap gap-2">
+                <Badge onClick={() => setBrand(null)} className={`cursor-pointer rounded-none ${!brand ? "bg-accent text-black" : "bg-secondary text-foreground"}`}>Toutes</Badge>
+                {brands.map(b => (
+                  <Badge key={b.id} data-testid={`filter-brand-${b.slug}`} onClick={() => setBrand(b.slug)} className={`cursor-pointer rounded-none ${brand === b.slug ? "bg-accent text-black" : "bg-secondary text-foreground"}`}>
+                    {b.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
 
         <div>

@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, status, UploadFile, File
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from urllib.parse import urlencode
@@ -158,6 +158,7 @@ class ProductIn(BaseModel):
     sale_price: Optional[float] = None
     stock: int = 0
     categories: List[str] = []
+    brands: List[str] = []
     images: List[str] = []
     variations: List[ProductVariation] = []
     featured: bool = False
@@ -351,6 +352,7 @@ async def me(user=Depends(current_admin)):
 @api.get("/products")
 async def list_products(
     category: Optional[str] = None,
+    brand: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     featured: Optional[bool] = None,
@@ -360,6 +362,8 @@ async def list_products(
     q: Dict[str, Any] = {"active": True}
     if category:
         q["categories"] = category
+    if brand:
+        q["brands"] = brand
     if featured is not None:
         q["featured"] = featured
     if min_price is not None or max_price is not None:
@@ -386,6 +390,28 @@ async def get_product(slug: str):
 async def list_categories():
     docs = await db.categories.find({}, {"_id": 0}).to_list(500)
     return docs
+
+
+@api.get("/categories/{slug}")
+async def get_category(slug: str):
+    doc = await db.categories.find_one({"slug": slug}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Catégorie introuvable")
+    return doc
+
+
+@api.get("/brands")
+async def list_brands():
+    docs = await db.brands.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    return docs
+
+
+@api.get("/brands/{slug}")
+async def get_brand(slug: str):
+    doc = await db.brands.find_one({"slug": slug}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Marque introuvable")
+    return doc
 
 
 @api.get("/blog")
@@ -1290,6 +1316,30 @@ async def _wp_get(path: str, params: dict = None, auth: bool = True):
         return r.json()
 
 
+@api.post("/admin/uploads/image")
+async def upload_product_image(file: UploadFile = File(...), user=Depends(current_admin)):
+    """Uploads an image to the WordPress media library (same host as existing product
+    images) and returns its public URL, so it can be added to a product's images list."""
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "Le fichier doit être une image")
+    contents = await file.read()
+    if len(contents) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Image trop volumineuse (max 8 Mo)")
+
+    url = f"{WP_BASE}/wp-json/wp/v2/media"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{file.filename}"',
+        "Content-Type": file.content_type,
+        "User-Agent": "KamiStreet-Admin/1.0 (+https://kamistreet.fr)",
+    }
+    async with httpx.AsyncClient(timeout=60, auth=(WP_USER, WP_APP_PWD.replace(" ", ""))) as c:
+        r = await c.post(url, content=contents, headers=headers)
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Erreur upload WordPress: {r.status_code} {r.text[:200]}")
+        media = r.json()
+    return {"url": media.get("source_url"), "id": media.get("id")}
+
+
 @api.post("/admin/sync/woocommerce")
 async def sync_woo(user=Depends(current_admin)):
     """Idempotent: uses woo_id as unique key, upserts."""
@@ -1308,9 +1358,30 @@ async def sync_woo(user=Depends(current_admin)):
                     "slug": c["slug"],
                     "count": c.get("count", 0),
                     "image": (c.get("image") or {}).get("src"),
+                    "description": c.get("description", ""),
                 }},
                 upsert=True,
             )
+
+        # Brands
+        try:
+            brands = await _woo_get("products/brands", {"per_page": 100})
+            for b in brands:
+                await db.brands.update_one(
+                    {"woo_id": b["id"]},
+                    {"$set": {
+                        "id": str(b["id"]),
+                        "woo_id": b["id"],
+                        "name": b["name"],
+                        "slug": b["slug"],
+                        "count": b.get("count", 0),
+                        "image": (b.get("image") or {}).get("src"),
+                        "description": b.get("description", ""),
+                    }},
+                    upsert=True,
+                )
+        except httpx.HTTPStatusError:
+            pass  # brands taxonomy not available on this store
 
         # Products (paginated)
         while True:
@@ -1345,6 +1416,7 @@ async def sync_woo(user=Depends(current_admin)):
                     "sale_price": float(p.get("sale_price")) if p.get("sale_price") else None,
                     "stock": p.get("stock_quantity") or 0,
                     "categories": [c["slug"] for c in p.get("categories", [])],
+                    "brands": [b["slug"] for b in p.get("brands", [])],
                     "images": [img["src"] for img in p.get("images", []) if img.get("src")],
                     "variations": variations,
                     "featured": p.get("featured", False),

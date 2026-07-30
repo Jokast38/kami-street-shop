@@ -35,6 +35,7 @@ const ORGANIZATION_JSON_LD = {
 };
 import Home from "@/pages/Home";
 import Shop from "@/pages/Shop";
+import CategoryPage from "@/pages/CategoryPage";
 import ProductDetail from "@/pages/ProductDetail";
 import Blog from "@/pages/Blog";
 import BlogPost from "@/pages/BlogPost";
@@ -68,6 +69,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<StoreLayout><Home /></StoreLayout>} />
       <Route path="/shop" element={<StoreLayout><Shop /></StoreLayout>} />
+      <Route path="/product-category/:slug" element={<StoreLayout><CategoryPage /></StoreLayout>} />
       <Route path="/product/:slug" element={<StoreLayout><ProductDetail /></StoreLayout>} />
       <Route path="/blog" element={<StoreLayout><Blog /></StoreLayout>} />
       <Route path="/blog/:slug" element={<StoreLayout><BlogPost /></StoreLayout>} />

@@ -142,17 +142,46 @@ function ProductsPanel({ items, authAxios, reload }) {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [uploading, setUploading] = useState(false);
+  const [newImageUrl, setNewImageUrl] = useState("");
 
-  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", images: "", featured: false, active: true };
+  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true };
   const [form, setForm] = useState(emptyProd);
 
   const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
 
-  const openNew = () => { setEditing(null); setForm(emptyProd); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm(emptyProd); setNewImageUrl(""); setOpen(true); };
   const openEdit = (p) => {
     setEditing(p);
-    setForm({ ...p, categories: (p.categories || []).join(", "), images: (p.images || []).join(",\n") });
+    setForm({ ...p, categories: (p.categories || []).join(", "), brands: (p.brands || []).join(", "), images: p.images || [] });
+    setNewImageUrl("");
     setOpen(true);
+  };
+
+  const addImageUrl = () => {
+    const url = newImageUrl.trim();
+    if (!url) return;
+    setForm({ ...form, images: [...form.images, url] });
+    setNewImageUrl("");
+  };
+  const removeImage = (idx) => setForm({ ...form, images: form.images.filter((_, i) => i !== idx) });
+
+  const uploadImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await authAxios.post("/admin/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setForm(f => ({ ...f, images: [...f.images, data.url] }));
+      toast.success("Image envoyée");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur lors de l'envoi de l'image");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
   const save = async () => {
@@ -162,7 +191,8 @@ function ProductsPanel({ items, authAxios, reload }) {
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       stock: parseInt(form.stock) || 0,
       categories: (form.categories || "").split(",").map(s => s.trim()).filter(Boolean),
-      images: (form.images || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean),
+      brands: (form.brands || "").split(",").map(s => s.trim()).filter(Boolean),
+      images: form.images || [],
       variations: form.variations || [],
     };
     try {
@@ -209,7 +239,16 @@ function ProductsPanel({ items, authAxios, reload }) {
               const wcStatus = p.wc_status || (p.active ? "publish" : "draft");
               return (
                 <tr key={p.id} className="border-t border-border" data-testid={`admin-product-${p.id}`}>
-                  <td className="p-3"><img src={p.images?.[0]} alt={p.name} className="w-12 h-12 object-cover" /></td>
+                  <td className="p-3">
+                    <div className="relative w-12 h-12">
+                      <img src={p.images?.[0]} alt={p.name} className="w-12 h-12 object-cover" />
+                      {p.images?.length > 1 && (
+                        <span className="absolute -top-1 -right-1 bg-accent text-black text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
+                          {p.images.length}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="p-3 font-medium">{p.name}</td>
                   <td className="p-3">{p.price?.toFixed(2)} €</td>
                   <td className="p-3">{p.stock}</td>
@@ -242,8 +281,43 @@ function ProductsPanel({ items, authAxios, reload }) {
               <div><Label>Prix promo</Label><Input type="number" step="0.01" value={form.sale_price || ""} onChange={e => setForm({ ...form, sale_price: e.target.value })} /></div>
               <div><Label>Stock</Label><Input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></div>
             </div>
-            <div><Label>Catégories (séparées par virgule)</Label><Input value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
-            <div><Label>URLs images (une par ligne)</Label><Textarea rows={3} value={form.images} onChange={e => setForm({ ...form, images: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Catégories (séparées par virgule)</Label><Input value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
+              <div><Label>Marques (séparées par virgule)</Label><Input value={form.brands} onChange={e => setForm({ ...form, brands: e.target.value })} /></div>
+            </div>
+
+            <div>
+              <Label>Images ({form.images.length})</Label>
+              {form.images.length > 0 && (
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-2">
+                  {form.images.map((img, idx) => (
+                    <div key={idx} className="relative aspect-square border border-border bg-white group">
+                      <img src={img} alt={`Image ${idx + 1}`} className="w-full h-full object-contain" />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(idx)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Retirer l'image"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 mt-3">
+                <Input placeholder="Coller une URL d'image..." value={newImageUrl} onChange={e => setNewImageUrl(e.target.value)} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addImageUrl())} />
+                <Button type="button" variant="outline" className="rounded-none shrink-0" onClick={addImageUrl}>Ajouter</Button>
+              </div>
+              <div className="mt-2">
+                <label className="inline-flex items-center gap-2 text-sm border border-dashed border-border px-4 py-2 cursor-pointer hover:border-accent transition-colors" data-testid="product-image-upload-label">
+                  <Image className="w-4 h-4" />
+                  {uploading ? "Envoi en cours..." : "Uploader une image"}
+                  <input type="file" accept="image/*" className="hidden" onChange={uploadImage} disabled={uploading} data-testid="product-image-upload-input" />
+                </label>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2"><Switch checked={form.featured} onCheckedChange={v => setForm({ ...form, featured: v })} /> <Label>Produit phare</Label></div>
             <div className="flex items-center gap-2"><Switch checked={form.active} onCheckedChange={v => setForm({ ...form, active: v })} /> <Label>Actif</Label></div>
             <Button onClick={save} className="cta-primary rounded-none w-full" data-testid="product-form-save">Enregistrer</Button>
