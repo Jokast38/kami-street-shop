@@ -14,6 +14,8 @@ from reportlab.platypus import (
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo-kami-street-black.png"
+# alternative logo filename (use if present in assets/)
+LOGO_ALT_PATH = ASSETS_DIR / "logo-kami-street-koala.png"
 
 ACCENT = colors.HexColor("#DAFF33")
 INK = colors.HexColor("#0B0B0C")
@@ -50,8 +52,16 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
 
     # ---- Header: logo + FACTURE title ----
     header_cells = [["", ""]]
-    if LOGO_PATH.exists():
-        logo = Image(str(LOGO_PATH), width=42 * mm, height=42 * mm * 0.28)
+    # prefer the alternative logo if present, otherwise fallback to the default
+    logo_path_to_use = None
+    if LOGO_ALT_PATH.exists():
+        logo_path_to_use = LOGO_ALT_PATH
+    elif LOGO_PATH.exists():
+        logo_path_to_use = LOGO_PATH
+
+    if logo_path_to_use:
+        # set a sensible square size so the logo aligns nicely with the title
+        logo = Image(str(logo_path_to_use), width=42 * mm, height=42 * mm)
         logo.hAlign = "LEFT"
     else:
         logo = Paragraph(COMPANY["name"], STYLE_H1)
@@ -106,9 +116,17 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     # ---- Line items table ----
     items = invoice.get("items", [])
     tax_rate = float(invoice.get("tax_rate", 0) or 0)
-    subtotal = sum(float(i.get("unit_price", 0)) * int(i.get("quantity", 1)) for i in items)
-    tax_amount = subtotal * tax_rate / 100
-    total = subtotal + tax_amount
+    # unit_price values are provided TTC (incl. TVA). We must not add TVA on top
+    # of these prices to compute the TOTAL TTC. Instead we derive HT and TVA
+    # from the TTC prices when needed for display.
+    subtotal_ttc = sum(float(i.get("unit_price", 0)) * int(i.get("quantity", 1)) for i in items)
+    if tax_rate:
+        subtotal_ht = sum((float(i.get("unit_price", 0)) / (1 + tax_rate / 100.0)) * int(i.get("quantity", 1)) for i in items)
+        tax_amount = subtotal_ttc - subtotal_ht
+    else:
+        subtotal_ht = subtotal_ttc
+        tax_amount = 0.0
+    total = subtotal_ttc
 
     header_row = ["Description", "Qté", "Prix unitaire", "Total"]
     rows = [header_row]
@@ -143,7 +161,8 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     flow.append(Spacer(1, 6 * mm))
 
     # ---- Totals ----
-    totals_rows = [["Sous-total", _money(subtotal)]]
+    # Display Sous-total as HT (derived), then TVA, then TOTAL TTC (sum of item prices)
+    totals_rows = [["Sous-total (HT)", _money(subtotal_ht)]]
     if tax_rate:
         totals_rows.append([f"TVA ({tax_rate:g}%)", _money(tax_amount)])
     totals_rows.append(["TOTAL TTC", _money(total)])
