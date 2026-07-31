@@ -8,7 +8,7 @@ export default function PrivacyPolicy() {
       <h1 className="display text-4xl font-black mb-8">Politique de confidentialité</h1>
       <section className="space-y-4 text-muted-foreground">
         <h2 className="display text-2xl font-bold text-foreground">Responsable du traitement</h2>
-        <p>Kami Street, 59 Av. Joffre, 93800 Épinay-sur-Seine. Contact : info@kamistreet.fr.</p>
+        <p>Kami Street, société par actions simplifiée, SIREN 104 079 264, dont le siège social est situé 59 Avenue Joffre, 93800 Épinay-sur-Seine. Contact : info@kamistreet.fr.</p>
         <h2 className="display text-2xl font-bold text-foreground pt-6">Données collectées</h2>
         <p>Lors d’une commande, nous collectons les informations nécessaires à la livraison, au paiement et au suivi de la commande : identité, adresse e-mail, adresse de livraison et informations de contact. Les données de paiement sont traitées par le prestataire de paiement et ne sont pas stockées par Kami Street.</p>
         <h2 className="display text-2xl font-bold text-foreground pt-6">Finalités et durées</h2>
