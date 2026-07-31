@@ -140,3 +140,24 @@
 .category-description table { display: block; max-width: 100%; overflow-x: auto; margin: 0 auto; }
 .category-description iframe, .category-description video { max-width: 100%; }
 .prose-ks a { color: hsl(var(--accent)); text-decoration: underline; }
+
+/* Leaflet store marker: a high-contrast pin that works on both map themes. */
+.kami-store-marker { background: transparent; border: 0; }
+.kami-store-marker-pin {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border: 3px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: #dc2626;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.45);
+  transform: rotate(-45deg);
+}
+.kami-store-marker-pin span {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 8px auto;
+  border-radius: 50%;
+  background: #fff;
+}
