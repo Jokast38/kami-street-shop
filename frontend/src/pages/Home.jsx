@@ -51,6 +51,24 @@ const FAQ_JSON_LD = {
 
 const STORE_LOCATION = { lat: 48.9515, lon: 2.3089 };
 
+const LOCAL_STORE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "BicycleStore",
+  "name": "Kami Street",
+  "description": "Essai de vélos électriques, fatbikes électriques et trottinettes électriques sur place à Épinay-sur-Seine.",
+  "url": "https://kamistreet.fr/",
+  "telephone": "+33180907251",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "59 Avenue Joffre",
+    "postalCode": "93800",
+    "addressLocality": "Épinay-sur-Seine",
+    "addressCountry": "FR",
+  },
+  "geo": { "@type": "GeoCoordinates", "latitude": STORE_LOCATION.lat, "longitude": STORE_LOCATION.lon },
+  "areaServed": ["Épinay-sur-Seine", "Seine-Saint-Denis", "Île-de-France"],
+};
+
 export default function Home() {
   const { theme } = useTheme();
   const koalaSrc = theme === "dark" ? "/logo/logo-koala-black.png" : "/logo/logo-koala-offwhite.png";
@@ -99,7 +117,7 @@ export default function Home() {
         title="Vélos électriques & Fatbikes à Épinay-sur-Seine | Kami Street"
         description="Kami Street propose des vélos électriques, fatbikes électriques, scooters et trottinettes électriques. Essayez votre vélo en magasin à Épinay-sur-Seine, en Île-de-France."
         path="/"
-        jsonLd={FAQ_JSON_LD}
+        jsonLd={[FAQ_JSON_LD, LOCAL_STORE_JSON_LD]}
       />
       {/* HERO */}
       <section className="relative overflow-hidden border-b border-border min-h-[85vh] flex items-center">
@@ -197,6 +215,40 @@ export default function Home() {
           <img src={koalaSrc} alt="" className="h-5 w-auto" /> // ELECTRIC FATBIKE // NEW DROP // KAMI STREET // 100% URBAN // MADE IN FRANCE //
         </span>
       </Marquee>
+
+      <section className="border-y border-border bg-secondary/40" aria-labelledby="test-ride-title">
+        <div className="max-w-7xl mx-auto px-6 py-14 md:py-20 grid lg:grid-cols-[0.9fr_1.1fr] gap-10 items-center">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-3">// Essai sur place à Épinay-sur-Seine</div>
+            <h2 id="test-ride-title" className="display text-3xl md:text-5xl font-black mb-5">Essayez votre vélo ou votre trottinette électrique</h2>
+            <p className="text-muted-foreground leading-relaxed mb-6">
+              Découvrez nos vélos électriques, fatbikes électriques et trottinettes électriques en conditions réelles. Venez essayer votre futur modèle directement dans notre boutique Kami Street à Épinay-sur-Seine et profitez de conseils personnalisés.
+            </p>
+            <div className="flex items-start gap-3 text-sm mb-6">
+              <MapPin className="w-5 h-5 shrink-0 mt-0.5 text-red-600" />
+              <span><strong>59 Avenue Joffre</strong><br />93800 Épinay-sur-Seine<br />Essai sur rendez-vous conseillé</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <a href="tel:+33180907251" className="cta-primary px-5 py-3 inline-flex items-center gap-2"><CalendarCheck className="w-4 h-4" />Réserver un essai</a>
+              <a href={`https://www.openstreetmap.org/?mlat=${STORE_LOCATION.lat}&mlon=${STORE_LOCATION.lon}#map=18/${STORE_LOCATION.lat}/${STORE_LOCATION.lon}`} target="_blank" rel="noopener noreferrer" className="px-5 py-3 border border-border inline-flex items-center gap-2 hover:border-accent transition-colors">Ouvrir la carte <ArrowRight className="w-4 h-4" /></a>
+            </div>
+          </div>
+          <div className="border border-border bg-card overflow-hidden shadow-lg">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+              <span className="font-bold">Notre boutique</span>
+              <span className="text-xs text-muted-foreground">Point Kami Street</span>
+            </div>
+            <iframe
+              title="Carte de la boutique Kami Street à Épinay-sur-Seine"
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=2.2989%2C48.9465%2C2.3189%2C48.9565&layer=mapnik&marker=${STORE_LOCATION.lat}%2C${STORE_LOCATION.lon}`}
+              className="block w-full h-[300px] md:h-[380px] border-0"
+              loading="eager"
+              allowFullScreen
+            />
+            <div className="p-3 text-xs text-muted-foreground">Vélos électriques · Fatbikes · Trottinettes électriques</div>
+          </div>
+        </div>
+      </section>
 
       {/* Value props */}
       <section className="max-w-7xl mx-auto px-6 py-16 grid md:grid-cols-3 gap-6">
