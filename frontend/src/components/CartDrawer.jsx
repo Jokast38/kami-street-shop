@@ -74,7 +74,7 @@ export default function CartDrawer() {
                   <div className="flex-1">
                     <div className="font-semibold text-sm">{i.name}</div>
                     <div className="text-xs text-muted-foreground">{(getLineTotal(i) / i.quantity).toFixed(2)} € / article</div>
-                    {i.bundle_enabled && i.quantity >= (i.bundle_quantity || 2) && <div className="text-xs text-accent font-bold">Prix du lot appliqué</div>}
+                    {i.bundle_enabled && i.quantity >= (i.bundle_quantity || 2) && <div className="text-xs text-red-600 dark:text-red-400 font-bold">Prix du lot appliqué</div>}
                     <div className="flex items-center gap-2 mt-2">
                       <button onClick={() => updateQty(i.product_id, i.variation_id, i.quantity - 1)} className="p-1 border"><Minus className="w-3 h-3" /></button>
                       <span className="text-sm w-6 text-center">{i.quantity}</span>

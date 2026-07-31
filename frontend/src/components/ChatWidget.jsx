@@ -130,7 +130,7 @@ function ChatProductCard({ p }) {
         <div className="text-sm font-semibold truncate">{p.name}</div>
         <div className="flex items-center gap-2">
           {p.sale_price && <span className="text-muted-foreground line-through text-xs">{p.price?.toFixed(2)} €</span>}
-          <span className="text-accent font-bold text-sm">{price?.toFixed(2)} €</span>
+          <span className={`font-bold text-sm ${p.sale_price && p.price > price ? "text-red-600 dark:text-red-400" : "text-black dark:text-accent"}`}>{price?.toFixed(2)} €</span>
         </div>
       </div>
       <Link

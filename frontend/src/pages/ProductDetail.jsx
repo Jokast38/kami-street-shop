@@ -25,6 +25,7 @@ export default function ProductDetail() {
 
   const currentPrice = selVar ? (selVar.sale_price || selVar.price) : (p.sale_price || p.price);
   const regularPrice = selVar ? (selVar.regular_price || selVar.price) : (p.regular_price || p.price);
+  const isDiscounted = regularPrice > currentPrice;
   const images = p.images?.length ? p.images : ["https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=800"];
 
   const shortDesc = p.short_description || (p.description || "").slice(0, 150);
@@ -54,6 +55,7 @@ export default function ProductDetail() {
       price: currentPrice,
       quantity: qty,
       image: selVar?.image || images[0],
+      is_discounted: isDiscounted,
       bundle_enabled: !selVar && p.bundle_enabled,
       bundle_quantity: !selVar ? p.bundle_quantity : null,
       bundle_price: !selVar ? p.bundle_price : null,
@@ -90,12 +92,12 @@ export default function ProductDetail() {
         <h1 className="display text-3xl md:text-4xl font-black mb-4" data-testid="product-title">{p.name}</h1>
         <div className="flex items-center gap-3 mb-6">
           {regularPrice > currentPrice && <span className="text-muted-foreground line-through">{regularPrice.toFixed(2)} €</span>}
-          <span className="display text-3xl font-black text-black dark:text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
+          <span className={`display text-3xl font-black ${isDiscounted ? "text-red-600 dark:text-red-400" : "text-black dark:text-accent"}`} data-testid="product-price">{currentPrice.toFixed(2)} €</span>
         </div>
         {p.bundle_enabled && p.bundle_price > 0 && p.bundle_quantity > 1 && (
           <div className="border border-accent bg-accent/10 p-4 mb-6" data-testid="product-bundle-offer">
             <div className="text-xs uppercase tracking-widest font-bold text-black dark:text-accent">Offre spéciale</div>
-            <div className="font-bold mt-1">{p.bundle_quantity} achetés pour {p.bundle_price.toFixed(2)} €</div>
+            <div className="font-bold mt-1 text-red-600 dark:text-red-400">{p.bundle_quantity} achetés pour {p.bundle_price.toFixed(2)} €</div>
             <div className="text-sm text-muted-foreground mt-1">L'offre s'applique automatiquement dès que la quantité est atteinte.</div>
           </div>
         )}
@@ -115,7 +117,7 @@ export default function ProductDetail() {
                   onClick={() => setSelVar(v)}
                   className={`cursor-pointer rounded-none px-4 py-2 ${selVar?.id === v.id ? "bg-accent text-black" : "bg-secondary text-foreground"}`}
                 >
-                  {v.name} — {(v.sale_price || v.price).toFixed(2)} €
+                  <span className={v.sale_price && v.sale_price < (v.regular_price || v.price) ? "text-red-600 dark:text-red-400" : ""}>{v.name} — {(v.sale_price || v.price).toFixed(2)} €</span>
                 </Badge>
               ))}
             </div>
