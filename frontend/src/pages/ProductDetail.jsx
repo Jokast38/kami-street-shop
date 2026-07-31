@@ -23,7 +23,8 @@ export default function ProductDetail() {
 
   if (!p) return <div className="p-12 text-center text-muted-foreground">Chargement...</div>;
 
-  const currentPrice = selVar ? selVar.price : (p.sale_price || p.price);
+  const currentPrice = selVar ? (selVar.sale_price || selVar.price) : (p.sale_price || p.price);
+  const regularPrice = selVar ? selVar.price : p.price;
   const images = p.images?.length ? p.images : ["https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=800"];
 
   const shortDesc = p.short_description || (p.description || "").slice(0, 150);
@@ -88,7 +89,7 @@ export default function ProductDetail() {
         <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">{p.categories?.[0] || "Kami Street"}</div>
         <h1 className="display text-3xl md:text-4xl font-black mb-4" data-testid="product-title">{p.name}</h1>
         <div className="flex items-center gap-3 mb-6">
-          {p.sale_price && <span className="text-muted-foreground line-through">{p.price.toFixed(2)} €</span>}
+          {regularPrice > currentPrice && <span className="text-muted-foreground line-through">{regularPrice.toFixed(2)} €</span>}
           <span className="display text-3xl font-black text-black dark:text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
         </div>
         {p.bundle_enabled && p.bundle_price > 0 && p.bundle_quantity > 1 && (
@@ -114,7 +115,7 @@ export default function ProductDetail() {
                   onClick={() => setSelVar(v)}
                   className={`cursor-pointer rounded-none px-4 py-2 ${selVar?.id === v.id ? "bg-accent text-black" : "bg-secondary text-foreground"}`}
                 >
-                  {v.name} — {v.price.toFixed(2)} €
+                  {v.name} — {(v.sale_price || v.price).toFixed(2)} €
                 </Badge>
               ))}
             </div>

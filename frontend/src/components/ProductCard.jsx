@@ -29,7 +29,7 @@ export default function ProductCard({ p, index = 0 }) {
           </div>
           <div className="font-semibold mt-1 line-clamp-2 min-h-[3rem]">{p.name}</div>
           <div className="flex items-center gap-2 mt-2">
-            {p.sale_price && (
+            {p.price > price && (
               <span className="text-muted-foreground line-through text-sm">{p.price.toFixed(2)} €</span>
             )}
             <span className="text-accent font-black display">{price.toFixed(2)} €</span>

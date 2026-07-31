@@ -144,6 +144,7 @@ class ProductVariation(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     price: float
+    sale_price: Optional[float] = None
     stock: int = 0
     attributes: Dict[str, str] = {}
     image: Optional[str] = None
@@ -1052,7 +1053,7 @@ async def calculate_checkout(body: CheckoutIn):
             variation = next((v for v in prod.get("variations", []) if v["id"] == it.variation_id), None)
             if not variation:
                 raise HTTPException(400, "Variante introuvable")
-            unit_price = variation["price"]
+            unit_price = variation.get("sale_price") or variation["price"]
         quantity = it.quantity
         bundle_quantity = int(prod.get("bundle_quantity") or 2)
         bundle_price = prod.get("bundle_price")
@@ -1484,7 +1485,8 @@ async def sync_woo(user=Depends(current_admin)):
                             variations.append({
                                 "id": str(v["id"]),
                                 "name": " / ".join(a.get("option", "") for a in v.get("attributes", [])) or v.get("sku", ""),
-                                "price": float(v.get("price") or 0),
+                                "price": float(v.get("regular_price") or v.get("price") or 0),
+                                "sale_price": float(v.get("sale_price")) if v.get("sale_price") else None,
                                 "stock": v.get("stock_quantity") or 0,
                                 "attributes": {a.get("name", ""): a.get("option", "") for a in v.get("attributes", [])},
                                 "image": (v.get("image") or {}).get("src"),
@@ -1499,7 +1501,7 @@ async def sync_woo(user=Depends(current_admin)):
                     "slug": p["slug"] or slugify(p["name"]),
                     "description": strip_html(p.get("description", "")),
                     "short_description": strip_html(p.get("short_description", "")),
-                    "price": float(p.get("price") or 0),
+                    "price": float(p.get("regular_price") or p.get("price") or 0),
                     "sale_price": float(p.get("sale_price")) if p.get("sale_price") else None,
                     "stock": p.get("stock_quantity") or 0,
                     "categories": [c["slug"] for c in p.get("categories", [])],
