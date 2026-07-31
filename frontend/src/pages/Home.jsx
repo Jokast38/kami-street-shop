@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, Zap, ShoppingBag, Truck } from "lucide-react";
+import { ArrowRight, ArrowLeft, Zap, ShoppingBag, Truck, MapPin, CalendarCheck } from "lucide-react";
 import Marquee from "react-fast-marquee";
 import { api } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
@@ -49,6 +49,8 @@ const FAQ_JSON_LD = {
   })),
 };
 
+const STORE_LOCATION = { lat: 48.9515, lon: 2.3089 };
+
 export default function Home() {
   const { theme } = useTheme();
   const koalaSrc = theme === "dark" ? "/logo/logo-koala-black.png" : "/logo/logo-koala-offwhite.png";
@@ -94,8 +96,8 @@ export default function Home() {
   return (
     <>
       <SEO
-        title="Kami Street | Fatbikes & Trottinettes Électriques France"
-        description="Kami Street, spécialiste des fatbikes, scooters et trottinettes électriques en France. Livraison 48h, garantie constructeur, accessoires et pièces détachées."
+        title="Vélos électriques & Fatbikes à Épinay-sur-Seine | Kami Street"
+        description="Kami Street propose des vélos électriques, fatbikes électriques, scooters et trottinettes électriques. Essayez votre vélo en magasin à Épinay-sur-Seine, en Île-de-France."
         path="/"
         jsonLd={FAQ_JSON_LD}
       />

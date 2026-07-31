@@ -4,6 +4,7 @@ import Marquee from "react-fast-marquee";
 import { useTheme } from "@/context/ThemeContext";
 import { FaTiktok, FaInstagram, FaLinkedin, FaSnapchatGhost, FaFacebook, FaYoutube } from "react-icons/fa";
 import { MapPin, Phone } from "lucide-react";
+import { CookieSettingsButton } from "@/components/CookieConsent";
 
 const SOCIAL_LINKS = [
   { name: "TikTok", icon: FaTiktok, url: "https://www.tiktok.com/@kami_street_" },
@@ -62,6 +63,10 @@ export default function Footer() {
           <div className="text-sm font-bold uppercase mb-3 tracking-widest">Compte</div>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li><Link to="/admin/login" className="hover:text-accent">Admin</Link></li>
+            <li><Link to="/mentions-legales" className="hover:text-accent">Mentions légales</Link></li>
+            <li><Link to="/politique-confidentialite" className="hover:text-accent">Confidentialité</Link></li>
+            <li><Link to="/cookies" className="hover:text-accent">Cookies</Link></li>
+            <li><CookieSettingsButton /></li>
           </ul>
         </div>
         <div>
