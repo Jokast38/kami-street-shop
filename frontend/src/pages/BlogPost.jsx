@@ -36,7 +36,7 @@ export default function BlogPost() {
         type="article"
         jsonLd={articleJsonLd}
       />
-      <div className="text-xs uppercase tracking-[0.3em] text-accent mb-4">
+      <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-4">
         {post.published_at ? new Date(post.published_at).toLocaleDateString("fr-FR") : ""}
       </div>
       <h1 className="display text-3xl md:text-5xl font-black mb-6" dangerouslySetInnerHTML={{ __html: post.title }} data-testid="blog-post-title" />

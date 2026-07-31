@@ -57,7 +57,7 @@ export default function CategoryPage() {
       )}
 
       <div className="mb-10 text-center max-w-3xl mx-auto">
-        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Catalog</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Catalog</div>
         <h1 className="display text-3xl sm:text-4xl md:text-5xl font-black break-words" data-testid="category-title">
           {category?.name || "Catégorie"}
         </h1>

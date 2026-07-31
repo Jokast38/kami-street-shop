@@ -30,7 +30,7 @@ export default function CheckoutSuccess() {
       {status && (
         <>
           <p className="text-muted-foreground mb-2">Commande #{status.order_no}</p>
-          <p className="text-muted-foreground mb-6">Total : <span className="text-accent font-bold">{status.total?.toFixed(2)} €</span></p>
+          <p className="text-muted-foreground mb-6">Total : <span className="text-black dark:text-accent font-bold">{status.total?.toFixed(2)} €</span></p>
           <p className="text-sm text-muted-foreground mb-8">Statut : {status.payment_status === "paid" ? "Payé ✓" : "En attente..."}</p>
         </>
       )}

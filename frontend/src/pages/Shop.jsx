@@ -45,7 +45,7 @@ export default function Shop() {
         path="/shop"
       />
       <div className="mb-10">
-        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Catalog</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Catalog</div>
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="shop-title">Boutique</h1>
       </div>
 

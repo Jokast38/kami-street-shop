@@ -21,7 +21,7 @@ export default function Blog() {
         path="/blog"
       />
       <div className="mb-10">
-        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Editorial</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Editorial</div>
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="blog-title">Le Journal</h1>
       </div>
       {posts.length === 0 ? (

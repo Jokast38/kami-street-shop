@@ -33,7 +33,7 @@ export default function ProductCard({ p, index = 0 }) {
             {regularPrice > price && (
               <span className="text-muted-foreground line-through text-sm">{regularPrice.toFixed(2)} €</span>
             )}
-            <span className="text-accent font-black display">{price.toFixed(2)} €</span>
+            <span className="text-black dark:text-accent font-black display">{price.toFixed(2)} €</span>
           </div>
           <div className="mt-2">
             <KlarnaBadge price={price} />

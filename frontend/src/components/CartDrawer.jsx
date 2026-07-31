@@ -88,7 +88,7 @@ export default function CartDrawer() {
             <div className="p-6 border-t space-y-3">
               <div className="flex justify-between font-bold">
                 <span>Total</span>
-                <span className="display text-accent" data-testid="cart-total">{total.toFixed(2)} €</span>
+                <span className="display text-black dark:text-accent" data-testid="cart-total">{total.toFixed(2)} €</span>
               </div>
               <KlarnaBadge price={total} />
               <Button className="w-full cta-primary rounded-none h-12" onClick={() => setStep("info")} data-testid="cart-checkout-btn">
@@ -109,7 +109,7 @@ export default function CartDrawer() {
               <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
             </div>
             <div className="p-6 border-t space-y-2">
-              <div className="flex justify-between font-bold"><span>Total</span><span className="display text-accent">{total.toFixed(2)} €</span></div>
+              <div className="flex justify-between font-bold"><span>Total</span><span className="display text-black dark:text-accent">{total.toFixed(2)} €</span></div>
               <div><Label>Code promo</Label><Input placeholder="Votre code promo" value={promoCode} onChange={e => setPromoCode(e.target.value)} /></div>
               <p className="text-xs text-muted-foreground">La remise sera vérifiée et appliquée au paiement.</p>
               <Button

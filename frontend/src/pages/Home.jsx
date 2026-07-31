@@ -215,7 +215,7 @@ export default function Home() {
       <section className="max-w-7xl mx-auto px-6 py-16">
         <div className="flex items-end justify-between mb-10">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Highlights</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Highlights</div>
             <h2 className="display text-3xl md:text-4xl font-black">Produits phares</h2>
           </div>
           <Link to="/shop" className="text-sm uppercase tracking-widest hover:text-accent inline-flex items-center gap-2">
@@ -238,7 +238,7 @@ export default function Home() {
         <section className="max-w-7xl mx-auto px-6 py-16 border-t border-border">
           <div className="flex items-end justify-between mb-10">
             <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Pour votre setup</div>
+              <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Pour votre setup</div>
               <h2 className="display text-3xl md:text-4xl font-black">Nos accessoires</h2>
             </div>
             <Link to="/product-category/accessoires" className="text-sm uppercase tracking-widest hover:text-accent inline-flex items-center gap-2">
@@ -254,7 +254,7 @@ export default function Home() {
       {/* Blog teasers */}
       {blog.length > 0 && (
         <section className="max-w-7xl mx-auto px-6 py-16">
-          <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Journal</div>
+          <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Journal</div>
           <h2 className="display text-3xl md:text-4xl font-black mb-10">Dernières publications</h2>
           <div className="grid md:grid-cols-3 gap-6">
             {blog.map((b) => (
@@ -273,7 +273,7 @@ export default function Home() {
       {/* Partner brands */}
       <section className="border-t border-border py-14">
         <div className="max-w-7xl mx-auto px-6 mb-8">
-          <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// Nos marques</div>
+          <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// Nos marques</div>
           <h2 className="display text-2xl md:text-3xl font-black">Marques partenaires</h2>
         </div>
         <Marquee speed={40} gradient={false} pauseOnHover>
@@ -291,7 +291,7 @@ export default function Home() {
 
       {/* FAQ */}
       <section className="max-w-4xl mx-auto px-6 py-16 border-t border-border">
-        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">// FAQ</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// FAQ</div>
         <h2 className="display text-2xl md:text-3xl font-black mb-8">Questions fréquentes</h2>
         <Accordion type="single" collapsible>
           {FAQ_ITEMS.map((item, i) => (
