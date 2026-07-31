@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [blog, setBlog] = useState([]);
   const [banners, setBanners] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [promos, setPromos] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
 
@@ -35,6 +36,7 @@ export default function AdminDashboard() {
     authAxios.get("/admin/blog").then(r => setBlog(r.data)).catch(() => {});
     authAxios.get("/admin/banners").then(r => setBanners(r.data)).catch(() => {});
     authAxios.get("/admin/invoices").then(r => setInvoices(r.data)).catch(() => {});
+    authAxios.get("/admin/promos").then(r => setPromos(r.data)).catch(() => {});
     authAxios.get("/admin/sync/status").then(r => setSyncStatus(r.data)).catch(() => {});
   }, [authAxios]);
 
@@ -93,6 +95,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="banners" data-testid="tab-banners" className="shrink-0">Bannières</TabsTrigger>
             <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>
             <TabsTrigger value="invoices" data-testid="tab-invoices" className="shrink-0">Factures</TabsTrigger>
+            <TabsTrigger value="promos" data-testid="tab-promos" className="shrink-0">Codes promo</TabsTrigger>
           </TabsList>
 
           <TabsContent value="products" className="mt-6">
@@ -112,6 +115,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="invoices" className="mt-6">
             <InvoicesPanel items={invoices} orders={orders} authAxios={authAxios} reload={loadAll} />
+          </TabsContent>
+          <TabsContent value="promos" className="mt-6">
+            <PromosPanel items={promos} authAxios={authAxios} reload={loadAll} />
           </TabsContent>
         </Tabs>
       </div>
@@ -145,7 +151,7 @@ function ProductsPanel({ items, authAxios, reload }) {
   const [uploading, setUploading] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
 
-  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true };
+  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null };
   const [form, setForm] = useState(emptyProd);
 
   const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
@@ -281,6 +287,13 @@ function ProductsPanel({ items, authAxios, reload }) {
               <div><Label>Prix promo</Label><Input type="number" step="0.01" value={form.sale_price || ""} onChange={e => setForm({ ...form, sale_price: e.target.value })} /></div>
               <div><Label>Stock</Label><Input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} /></div>
             </div>
+            <div className="border border-border p-4 space-y-3">
+              <div className="flex items-center gap-2"><Switch checked={form.bundle_enabled} onCheckedChange={v => setForm({ ...form, bundle_enabled: v })} /><Label>Activer l'offre bundle</Label></div>
+              {form.bundle_enabled && <div className="grid grid-cols-2 gap-3">
+                <div><Label>Articles par lot</Label><Input type="number" min="2" value={form.bundle_quantity} onChange={e => setForm({ ...form, bundle_quantity: e.target.value })} /></div>
+                <div><Label>Prix du lot (€)</Label><Input type="number" min="0" step="0.01" value={form.bundle_price || ""} onChange={e => setForm({ ...form, bundle_price: e.target.value })} /></div>
+              </div>}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Catégories (séparées par virgule)</Label><Input value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
               <div><Label>Marques (séparées par virgule)</Label><Input value={form.brands} onChange={e => setForm({ ...form, brands: e.target.value })} /></div>
@@ -326,6 +339,24 @@ function ProductsPanel({ items, authAxios, reload }) {
       </Dialog>
     </div>
   );
+}
+
+function PromosPanel({ items, authAxios, reload }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const empty = { code: "", discount_type: "percent", value: 10, min_order: 0, expires_at: "", max_uses: "", active: true };
+  const [form, setForm] = useState(empty);
+  const save = async () => {
+    const body = { ...form, code: form.code.toUpperCase(), value: Number(form.value), min_order: Number(form.min_order) || 0, max_uses: form.max_uses ? Number(form.max_uses) : null, expires_at: form.expires_at || null };
+    try { editing ? await authAxios.put(`/admin/promos/${editing.id}`, body) : await authAxios.post("/admin/promos", body); toast.success("Code promo enregistré"); setOpen(false); reload(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+  const del = async id => { if (!confirm("Supprimer ce code promo ?")) return; await authAxios.delete(`/admin/promos/${id}`); reload(); };
+  return <div>
+    <div className="flex justify-between mb-4 items-center"><h2 className="display text-xl font-bold">Codes promo ({items.length})</h2><Button className="cta-primary rounded-none" onClick={() => { setEditing(null); setForm(empty); setOpen(true); }}><Plus className="w-4 h-4 mr-2" />Nouveau</Button></div>
+    <div className="border border-border overflow-x-auto"><table className="w-full text-sm"><thead className="bg-secondary"><tr><th className="text-left p-3">Code</th><th className="text-left p-3">Remise</th><th className="text-left p-3">Utilisations</th><th className="text-left p-3">Statut</th><th></th></tr></thead><tbody>{items.map(p => <tr key={p.id} className="border-t border-border"><td className="p-3 font-mono font-bold">{p.code}</td><td className="p-3">{p.value}{p.discount_type === "percent" ? "%" : " €"}</td><td className="p-3">{p.uses || 0}{p.max_uses ? ` / ${p.max_uses}` : ""}</td><td className="p-3">{p.active ? "Actif" : "Inactif"}</td><td className="p-3 text-right"><Button size="icon" variant="ghost" onClick={() => { setEditing(p); setForm({ ...p, expires_at: p.expires_at ? p.expires_at.slice(0, 10) : "" }); setOpen(true); }}><Edit className="w-4 h-4" /></Button><Button size="icon" variant="ghost" onClick={() => del(p.id)}><Trash2 className="w-4 h-4" /></Button></td></tr>)}</tbody></table></div>
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>{editing ? "Modifier le code promo" : "Nouveau code promo"}</DialogTitle></DialogHeader><div className="space-y-3"><div><Label>Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div><div className="grid grid-cols-2 gap-3"><div><Label>Type</Label><Select value={form.discount_type} onValueChange={v => setForm({ ...form, discount_type: v })}><SelectTrigger className="rounded-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="percent">Pourcentage</SelectItem><SelectItem value="fixed">Montant fixe</SelectItem></SelectContent></Select></div><div><Label>Valeur</Label><Input type="number" min="0" step="0.01" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} /></div></div><div className="grid grid-cols-2 gap-3"><div><Label>Minimum (€)</Label><Input type="number" min="0" step="0.01" value={form.min_order} onChange={e => setForm({ ...form, min_order: e.target.value })} /></div><div><Label>Expiration</Label><Input type="date" value={form.expires_at || ""} onChange={e => setForm({ ...form, expires_at: e.target.value })} /></div></div><div><Label>Nombre max. d'utilisations (optionnel)</Label><Input type="number" min="1" value={form.max_uses || ""} onChange={e => setForm({ ...form, max_uses: e.target.value })} /></div><div className="flex items-center gap-2"><Switch checked={form.active} onCheckedChange={v => setForm({ ...form, active: v })} /><Label>Actif</Label></div><Button onClick={save} className="cta-primary rounded-none w-full">Enregistrer</Button></div></DialogContent></Dialog>
+  </div>;
 }
 
 function OrdersPanel({ items, authAxios, reload }) {

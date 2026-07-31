@@ -53,6 +53,9 @@ export default function ProductDetail() {
       price: currentPrice,
       quantity: qty,
       image: selVar?.image || images[0],
+      bundle_enabled: !selVar && p.bundle_enabled,
+      bundle_quantity: !selVar ? p.bundle_quantity : null,
+      bundle_price: !selVar ? p.bundle_price : null,
     });
   };
 
@@ -88,6 +91,13 @@ export default function ProductDetail() {
           {p.sale_price && <span className="text-muted-foreground line-through">{p.price.toFixed(2)} €</span>}
           <span className="display text-3xl font-black text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
         </div>
+        {p.bundle_enabled && p.bundle_price > 0 && p.bundle_quantity > 1 && (
+          <div className="border border-accent bg-accent/10 p-4 mb-6" data-testid="product-bundle-offer">
+            <div className="text-xs uppercase tracking-widest font-bold text-accent">Offre bundle</div>
+            <div className="font-bold mt-1">{p.bundle_quantity} achetés pour {p.bundle_price.toFixed(2)} €</div>
+            <div className="text-sm text-muted-foreground mt-1">L'offre s'applique automatiquement dès que la quantité est atteinte.</div>
+          </div>
+        )}
         <div className="mb-6">
           <KlarnaBadge price={currentPrice} size="lg" />
         </div>

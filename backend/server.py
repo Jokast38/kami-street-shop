@@ -163,6 +163,19 @@ class ProductIn(BaseModel):
     variations: List[ProductVariation] = []
     featured: bool = False
     active: bool = True
+    bundle_enabled: bool = False
+    bundle_quantity: int = 2
+    bundle_price: Optional[float] = None
+
+
+class PromoCodeIn(BaseModel):
+    code: str
+    discount_type: str = "percent"
+    value: float
+    min_order: float = 0.0
+    expires_at: Optional[str] = None
+    max_uses: Optional[int] = None
+    active: bool = True
 
 
 class BlogIn(BaseModel):
@@ -200,6 +213,7 @@ class CheckoutIn(BaseModel):
     customer_name: str
     shipping_address: Dict[str, str]
     origin_url: str
+    promo_code: Optional[str] = None
 
 
 class PaymentSettingsIn(BaseModel):
@@ -947,6 +961,50 @@ async def delete_invoice(iid: str, user=Depends(current_admin)):
     return {"ok": True}
 
 
+@api.get("/admin/promos")
+async def admin_promos(user=Depends(current_admin)):
+    return await db.promos.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api.post("/admin/promos")
+async def create_promo(body: PromoCodeIn, user=Depends(current_admin)):
+    code = body.code.strip().upper()
+    if not code or body.value <= 0 or body.discount_type not in ("percent", "fixed"):
+        raise HTTPException(400, "Code promo invalide")
+    if body.discount_type == "percent" and body.value > 100:
+        raise HTTPException(400, "La remise en pourcentage doit être comprise entre 0 et 100")
+    if body.max_uses is not None and body.max_uses < 1:
+        raise HTTPException(400, "Le nombre maximal d'utilisations doit être positif")
+    if await db.promos.find_one({"code": code}):
+        raise HTTPException(409, "Ce code promo existe déjà")
+    promo = body.model_dump()
+    promo.update({"code": code, "id": str(uuid.uuid4()), "uses": 0, "created_at": now_iso()})
+    await db.promos.insert_one(promo)
+    return clean(promo)
+
+
+@api.put("/admin/promos/{promo_id}")
+async def update_promo(promo_id: str, body: PromoCodeIn, user=Depends(current_admin)):
+    code = body.code.strip().upper()
+    if not code or body.value <= 0 or body.discount_type not in ("percent", "fixed"):
+        raise HTTPException(400, "Code promo invalide")
+    if body.discount_type == "percent" and body.value > 100:
+        raise HTTPException(400, "La remise en pourcentage doit être comprise entre 0 et 100")
+    duplicate = await db.promos.find_one({"code": code, "id": {"$ne": promo_id}})
+    if duplicate:
+        raise HTTPException(409, "Ce code promo existe déjà")
+    result = await db.promos.update_one({"id": promo_id}, {"$set": {**body.model_dump(), "code": code}})
+    if result.matched_count == 0:
+        raise HTTPException(404, "Code promo introuvable")
+    return {"ok": True}
+
+
+@api.delete("/admin/promos/{promo_id}")
+async def delete_promo(promo_id: str, user=Depends(current_admin)):
+    await db.promos.delete_one({"id": promo_id})
+    return {"ok": True}
+
+
 @api.get("/admin/invoices/{iid}/pdf")
 async def invoice_pdf(iid: str, user=Depends(current_admin)):
     invoice = await db.invoices.find_one({"id": iid}, {"_id": 0})
@@ -977,62 +1035,110 @@ async def admin_stats(user=Depends(current_admin)):
     }
 
 
+async def calculate_checkout(body: CheckoutIn):
+    if not body.items:
+        raise HTTPException(400, "Panier vide")
+    total = 0.0
+    priced_items = []
+    line_items = []
+    for it in body.items:
+        if it.quantity < 1 or it.quantity > 99:
+            raise HTTPException(400, "Quantité invalide")
+        prod = await db.products.find_one({"id": it.product_id, "active": True}, {"_id": 0})
+        if not prod:
+            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
+        unit_price = prod.get("sale_price") or prod["price"]
+        if it.variation_id:
+            variation = next((v for v in prod.get("variations", []) if v["id"] == it.variation_id), None)
+            if not variation:
+                raise HTTPException(400, "Variante introuvable")
+            unit_price = variation["price"]
+        quantity = it.quantity
+        bundle_quantity = int(prod.get("bundle_quantity") or 2)
+        bundle_price = prod.get("bundle_price")
+        bundles = quantity // bundle_quantity if prod.get("bundle_enabled") and bundle_price is not None and bundle_price > 0 else 0
+        remainder = quantity - (bundles * bundle_quantity)
+        charged = (bundles * bundle_price) + (remainder * unit_price)
+        total += charged
+        priced_items.append({**it.model_dump(), "price": round(charged / quantity, 2), "regular_price": unit_price})
+        if bundles:
+            line_items.append({"name": f"{prod['name']} (lot de {bundle_quantity})", "price": bundle_price, "quantity": bundles})
+        if remainder:
+            line_items.append({"name": prod["name"], "price": unit_price, "quantity": remainder})
+        if not bundles and not remainder:
+            line_items.append({"name": prod["name"], "price": unit_price, "quantity": quantity})
+
+    subtotal = round(total, 2)
+    discount = 0.0
+    promo = None
+    if body.promo_code:
+        promo = await db.promos.find_one({"code": body.promo_code.strip().upper(), "active": True}, {"_id": 0})
+        if not promo:
+            raise HTTPException(400, "Code promo invalide ou inactif")
+        if promo.get("expires_at"):
+            try:
+                if datetime.fromisoformat(promo["expires_at"].replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                    raise HTTPException(400, "Code promo expiré")
+            except ValueError:
+                raise HTTPException(400, "Code promo mal configuré")
+        if promo.get("max_uses") is not None and promo.get("uses", 0) >= promo["max_uses"]:
+            raise HTTPException(400, "Code promo épuisé")
+        if subtotal < promo.get("min_order", 0):
+            raise HTTPException(400, f"Minimum de commande : {promo['min_order']:.2f} €")
+        discount = subtotal * promo["value"] / 100 if promo["discount_type"] == "percent" else promo["value"]
+        discount = min(round(discount, 2), subtotal)
+        if promo.get("max_uses") is not None:
+            await db.promos.update_one({"id": promo["id"], "uses": {"$lt": promo["max_uses"]}}, {"$inc": {"uses": 1}})
+
+    return {"subtotal": subtotal, "discount": discount, "total": round(subtotal - discount, 2), "promo": promo, "items": priced_items, "line_items": line_items}
+
+
 # ----------------------------- Checkout (Stripe) -----------------------------
 @api.post("/checkout/session")
 async def create_checkout_session(body: CheckoutIn):
     settings = await get_payment_settings()
     if not settings.get("stripe_enabled", True):
         raise HTTPException(400, "Le paiement par carte (Stripe) n'est pas activé")
-    if not body.items:
-        raise HTTPException(400, "Panier vide")
-    # Verify prices server-side
-    total = 0.0
-    line_items = []
-    for it in body.items:
-        prod = await db.products.find_one({"id": it.product_id}, {"_id": 0})
-        if not prod:
-            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
-        unit_price = prod.get("sale_price") or prod["price"]
-        if it.variation_id:
-            for v in prod.get("variations", []):
-                if v["id"] == it.variation_id:
-                    unit_price = v["price"]
-                    break
-        total += unit_price * it.quantity
-        line_items.append(
-            {
-                "price_data": {
-                    "currency": "eur",
-                    "product_data": {"name": prod["name"], "images": prod.get("images", [])[:1]},
-                    "unit_amount": int(round(unit_price * 100)),
-                },
-                "quantity": it.quantity,
-            }
-        )
+    pricing = await calculate_checkout(body)
+    line_items = [{
+        "price_data": {
+            "currency": "eur",
+            "product_data": {"name": item["name"]},
+            "unit_amount": int(round(item["price"] * 100)),
+        },
+        "quantity": item["quantity"],
+    } for item in pricing["line_items"]]
 
     order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     order_id = str(uuid.uuid4())
     order = {
         "id": order_id,
         "order_no": order_no,
-        "items": [i.model_dump() for i in body.items],
+        "items": pricing["items"],
         "customer_email": body.customer_email,
         "customer_name": body.customer_name,
         "shipping_address": body.shipping_address,
-        "total": round(total, 2),
+        "subtotal": pricing["subtotal"],
+        "discount": pricing["discount"],
+        "promo_code": body.promo_code,
+        "total": pricing["total"],
         "status": "pending",
         "payment_status": "pending",
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
-    session = stripe.checkout.Session.create(
-        mode="payment",
-        line_items=line_items,
-        customer_email=body.customer_email,
-        success_url=f"{body.origin_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{body.origin_url}/checkout/cancel",
-        metadata={"order_id": order_id, "order_no": order_no},
-    )
+    session_args = {
+        "mode": "payment",
+        "line_items": line_items,
+        "customer_email": body.customer_email,
+        "success_url": f"{body.origin_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{body.origin_url}/checkout/cancel",
+        "metadata": {"order_id": order_id, "order_no": order_no},
+    }
+    if pricing["discount"]:
+        coupon = stripe.Coupon.create(amount_off=int(round(pricing["discount"] * 100)), currency="eur", duration="once")
+        session_args["discounts"] = [{"coupon": coupon.id}]
+    session = stripe.checkout.Session.create(**session_args)
     order["session_id"] = session.id
     await db.orders.insert_one(order)
     return {"checkout_url": session.url, "session_id": session.id, "order_no": order_no}
@@ -1116,31 +1222,20 @@ async def create_qonto_checkout(body: CheckoutIn):
     settings = await get_payment_settings()
     if not settings.get("qonto_enabled"):
         raise HTTPException(400, "Le paiement par carte (Qonto) n'est pas activé")
-    if not body.items:
-        raise HTTPException(400, "Panier vide")
-
-    total = 0.0
+    pricing = await calculate_checkout(body)
     items = []
-    for it in body.items:
-        prod = await db.products.find_one({"id": it.product_id}, {"_id": 0})
-        if not prod:
-            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
-        unit_price = prod.get("sale_price") or prod["price"]
-        if it.variation_id:
-            for v in prod.get("variations", []):
-                if v["id"] == it.variation_id:
-                    unit_price = v["price"]
-                    break
-        total += unit_price * it.quantity
+    for item in pricing["line_items"]:
         items.append(
             {
-                "title": prod["name"][:255],
+                "title": item["name"][:255],
                 "type": "good",
-                "quantity": it.quantity,
-                "unit_price": {"value": f"{unit_price:.2f}", "currency": "EUR"},
+                "quantity": item["quantity"],
+                "unit_price": {"value": f"{item['price']:.2f}", "currency": "EUR"},
                 "vat_rate": settings.get("qonto_vat_rate", "20.0"),
             }
         )
+    if pricing["discount"]:
+        items.append({"title": "Remise code promo", "type": "discount", "quantity": 1, "unit_price": {"value": f"{-pricing['discount']:.2f}", "currency": "EUR"}, "vat_rate": settings.get("qonto_vat_rate", "20.0")})
 
     order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     order_id = str(uuid.uuid4())
@@ -1159,11 +1254,14 @@ async def create_qonto_checkout(body: CheckoutIn):
     order = {
         "id": order_id,
         "order_no": order_no,
-        "items": [i.model_dump() for i in body.items],
+        "items": pricing["items"],
         "customer_email": body.customer_email,
         "customer_name": body.customer_name,
         "shipping_address": body.shipping_address,
-        "total": round(total, 2),
+        "subtotal": pricing["subtotal"],
+        "discount": pricing["discount"],
+        "promo_code": body.promo_code,
+        "total": pricing["total"],
         "status": "pending",
         "payment_status": "pending",
         "provider": "qonto",
@@ -1210,27 +1308,13 @@ async def create_mollie_checkout(body: CheckoutIn):
     settings = await get_payment_settings()
     if not settings.get("mollie_enabled") or not MOLLIE_API_KEY:
         raise HTTPException(400, "Le paiement par carte (Mollie) n'est pas activé")
-    if not body.items:
-        raise HTTPException(400, "Panier vide")
-
-    total = 0.0
-    for it in body.items:
-        prod = await db.products.find_one({"id": it.product_id}, {"_id": 0})
-        if not prod:
-            raise HTTPException(400, f"Produit introuvable: {it.product_id}")
-        unit_price = prod.get("sale_price") or prod["price"]
-        if it.variation_id:
-            for v in prod.get("variations", []):
-                if v["id"] == it.variation_id:
-                    unit_price = v["price"]
-                    break
-        total += unit_price * it.quantity
+    pricing = await calculate_checkout(body)
 
     order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     order_id = str(uuid.uuid4())
 
     payment_payload = {
-        "amount": {"currency": "EUR", "value": f"{total:.2f}"},
+        "amount": {"currency": "EUR", "value": f"{pricing['total']:.2f}"},
         "description": f"Commande {order_no} — Kami Street",
         "redirectUrl": f"{body.origin_url}/checkout/success?session_id={order_id}",
         "metadata": {"order_id": order_id, "order_no": order_no},
@@ -1253,11 +1337,14 @@ async def create_mollie_checkout(body: CheckoutIn):
     order = {
         "id": order_id,
         "order_no": order_no,
-        "items": [i.model_dump() for i in body.items],
+        "items": pricing["items"],
         "customer_email": body.customer_email,
         "customer_name": body.customer_name,
         "shipping_address": body.shipping_address,
-        "total": round(total, 2),
+        "subtotal": pricing["subtotal"],
+        "discount": pricing["discount"],
+        "promo_code": body.promo_code,
+        "total": pricing["total"],
         "status": "pending",
         "payment_status": "pending",
         "provider": "mollie",

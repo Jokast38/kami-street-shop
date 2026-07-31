@@ -3,6 +3,17 @@ import { toast } from "sonner";
 
 const CartContext = createContext(null);
 
+const getLineTotal = (item) => {
+  const bundleQuantity = Number(item.bundle_quantity) || 2;
+  const bundlePrice = Number(item.bundle_price);
+  if (item.bundle_enabled && bundlePrice > 0 && item.quantity >= bundleQuantity) {
+    const bundles = Math.floor(item.quantity / bundleQuantity);
+    const remainder = item.quantity % bundleQuantity;
+    return bundles * bundlePrice + remainder * item.price;
+  }
+  return item.price * item.quantity;
+};
+
 export const CartProvider = ({ children }) => {
   const [items, setItems] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ks_cart") || "[]"); } catch { return []; }
@@ -39,11 +50,11 @@ export const CartProvider = ({ children }) => {
 
   const clear = () => setItems([]);
 
-  const total = items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const total = items.reduce((s, i) => s + getLineTotal(i), 0);
   const count = items.reduce((s, i) => s + i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQty, clear, total, count, open, setOpen }}>
+    <CartContext.Provider value={{ items, addItem, removeItem, updateQty, clear, total, count, open, setOpen, getLineTotal }}>
       {children}
     </CartContext.Provider>
   );

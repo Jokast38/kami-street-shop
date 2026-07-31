@@ -8,6 +8,28 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("admin_token"));
   const [email, setEmail] = useState(localStorage.getItem("admin_email"));
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("admin_token");
+    if (!storedToken) {
+      setAuthReady(true);
+      return;
+    }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${storedToken}` } })
+      .then(({ data }) => {
+        setToken(storedToken);
+        setEmail(data.email);
+        localStorage.setItem("admin_email", data.email);
+      })
+      .catch(() => {
+        localStorage.removeItem("admin_token");
+        localStorage.removeItem("admin_email");
+        setToken(null);
+        setEmail(null);
+      })
+      .finally(() => setAuthReady(true));
+  }, []);
 
   const login = async (em, password) => {
     const { data } = await axios.post(`${API}/auth/login`, { email: em, password });
@@ -30,9 +52,18 @@ export const AuthProvider = ({ children }) => {
     if (token) cfg.headers.Authorization = `Bearer ${token}`;
     return cfg;
   });
+  authAxios.interceptors.response.use(
+    response => response,
+    error => {
+      if (error.response?.status === 401) {
+        logout();
+      }
+      return Promise.reject(error);
+    },
+  );
 
   return (
-    <AuthContext.Provider value={{ token, email, login, logout, authAxios }}>
+    <AuthContext.Provider value={{ token, email, login, logout, authAxios, authReady }}>
       {children}
     </AuthContext.Provider>
   );
