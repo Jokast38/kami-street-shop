@@ -23,6 +23,7 @@ import httpx
 import stripe
 from slugify import slugify
 from pymongo import ReturnDocument
+from pymongo.errors import PyMongoError
 from invoicing import generate_invoice_pdf
 
 ROOT_DIR = Path(__file__).parent
@@ -76,7 +77,12 @@ MOLLIE_API_BASE = "https://api.mollie.com/v2"
 BACKEND_URL = os.environ.get("BACKEND_URL") or QONTO_REDIRECT_URI.split("/api/")[0]
 
 # MongoDB
-client = AsyncIOMotorClient(MONGO_URL)
+client = AsyncIOMotorClient(
+    MONGO_URL,
+    serverSelectionTimeoutMS=int(os.environ.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000")),
+    connectTimeoutMS=int(os.environ.get("MONGO_CONNECT_TIMEOUT_MS", "5000")),
+    socketTimeoutMS=int(os.environ.get("MONGO_SOCKET_TIMEOUT_MS", "10000")),
+)
 db = client[DB_NAME]
 
 # App
@@ -327,26 +333,39 @@ async def _auto_sync_loop():
 
 
 # ----------------------------- Startup: seed admin -----------------------------
+async def _initialize_database():
+    while True:
+        try:
+            await db.command("ping")
+            existing = await db.users.find_one({"email": ADMIN_EMAIL})
+            if not existing:
+                await db.users.insert_one(
+                    {
+                        "id": str(uuid.uuid4()),
+                        "email": ADMIN_EMAIL,
+                        "password_hash": hash_pw(ADMIN_INITIAL_PASSWORD),
+                        "role": "admin",
+                        "created_at": now_iso(),
+                    }
+                )
+                logging.info(f"Seeded admin: {ADMIN_EMAIL}")
+            await db.products.create_index("slug", unique=True, sparse=True)
+            await db.blog.create_index("slug", unique=True, sparse=True)
+            await db.orders.create_index("order_no", unique=True, sparse=True)
+            logging.info("MongoDB ready")
+            app.state.mongo_ready = True
+            app.state.sync_task = asyncio.create_task(_auto_sync_loop())
+            return
+        except PyMongoError as exc:
+            app.state.mongo_ready = False
+            logging.error("MongoDB unavailable during startup; retrying in 15s: %s", exc)
+            await asyncio.sleep(15)
+
+
 @app.on_event("startup")
 async def startup():
-    existing = await db.users.find_one({"email": ADMIN_EMAIL})
-    if not existing:
-        await db.users.insert_one(
-            {
-                "id": str(uuid.uuid4()),
-                "email": ADMIN_EMAIL,
-                "password_hash": hash_pw(ADMIN_INITIAL_PASSWORD),
-                "role": "admin",
-                "created_at": now_iso(),
-            }
-        )
-        logging.info(f"Seeded admin: {ADMIN_EMAIL}")
-    # indexes
-    await db.products.create_index("slug", unique=True, sparse=True)
-    await db.blog.create_index("slug", unique=True, sparse=True)
-    await db.orders.create_index("order_no", unique=True, sparse=True)
-
-    app.state.sync_task = asyncio.create_task(_auto_sync_loop())
+    app.state.mongo_ready = False
+    app.state.mongo_task = asyncio.create_task(_initialize_database())
 
 
 # ----------------------------- Auth routes -----------------------------
@@ -1392,6 +1411,15 @@ async def _woo_get(path: str, params: dict = None):
         return r.json()
 
 
+def _woo_money(value) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _wp_get(path: str, params: dict = None, auth: bool = True):
     url = f"{WP_BASE}/wp-json/wp/v2/{path}"
     kwargs = {"timeout": 60, "follow_redirects": True}
@@ -1477,16 +1505,24 @@ async def sync_woo(user=Depends(current_admin)):
             if not items:
                 break
             for p in items:
+                existing_product = await db.products.find_one({"woo_id": p["id"]}, {"_id": 0, "price": 1})
+                regular_price = _woo_money(p.get("regular_price"))
+                current_price = _woo_money(p.get("price"))
+                if regular_price is None:
+                    regular_price = _woo_money((existing_product or {}).get("price")) or current_price or 0.0
+                sale_price = _woo_money(p.get("sale_price"))
                 variations = []
                 if p.get("type") == "variable" and p.get("variations"):
                     try:
                         vlist = await _woo_get(f"products/{p['id']}/variations", {"per_page": 100})
                         for v in vlist:
+                            variation_regular_price = _woo_money(v.get("regular_price")) or _woo_money(v.get("price")) or 0.0
                             variations.append({
                                 "id": str(v["id"]),
                                 "name": " / ".join(a.get("option", "") for a in v.get("attributes", [])) or v.get("sku", ""),
-                                "price": float(v.get("regular_price") or v.get("price") or 0),
-                                "sale_price": float(v.get("sale_price")) if v.get("sale_price") else None,
+                                "price": variation_regular_price,
+                                "regular_price": variation_regular_price,
+                                "sale_price": _woo_money(v.get("sale_price")),
                                 "stock": v.get("stock_quantity") or 0,
                                 "attributes": {a.get("name", ""): a.get("option", "") for a in v.get("attributes", [])},
                                 "image": (v.get("image") or {}).get("src"),
@@ -1501,8 +1537,9 @@ async def sync_woo(user=Depends(current_admin)):
                     "slug": p["slug"] or slugify(p["name"]),
                     "description": strip_html(p.get("description", "")),
                     "short_description": strip_html(p.get("short_description", "")),
-                    "price": float(p.get("regular_price") or p.get("price") or 0),
-                    "sale_price": float(p.get("sale_price")) if p.get("sale_price") else None,
+                    "price": regular_price,
+                    "regular_price": regular_price,
+                    "sale_price": sale_price,
                     "stock": p.get("stock_quantity") or 0,
                     "categories": [c["slug"] for c in p.get("categories", [])],
                     "brands": [b["slug"] for b in p.get("brands", [])],

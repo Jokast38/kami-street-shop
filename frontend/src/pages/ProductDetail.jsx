@@ -24,7 +24,7 @@ export default function ProductDetail() {
   if (!p) return <div className="p-12 text-center text-muted-foreground">Chargement...</div>;
 
   const currentPrice = selVar ? (selVar.sale_price || selVar.price) : (p.sale_price || p.price);
-  const regularPrice = selVar ? selVar.price : p.price;
+  const regularPrice = selVar ? (selVar.regular_price || selVar.price) : (p.regular_price || p.price);
   const images = p.images?.length ? p.images : ["https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=800"];
 
   const shortDesc = p.short_description || (p.description || "").slice(0, 150);

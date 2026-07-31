@@ -4,7 +4,8 @@ import { motion } from "framer-motion";
 import KlarnaBadge from "@/components/KlarnaBadge";
 
 export default function ProductCard({ p, index = 0 }) {
-  const price = p.sale_price || p.price;
+  const regularPrice = p.regular_price || p.price;
+  const price = p.sale_price || regularPrice;
   const img = p.images?.[0] || "https://images.unsplash.com/photo-1721637686340-de9f8cebda5a?w=800";
   return (
     <motion.div
@@ -29,8 +30,8 @@ export default function ProductCard({ p, index = 0 }) {
           </div>
           <div className="font-semibold mt-1 line-clamp-2 min-h-[3rem]">{p.name}</div>
           <div className="flex items-center gap-2 mt-2">
-            {p.price > price && (
-              <span className="text-muted-foreground line-through text-sm">{p.price.toFixed(2)} €</span>
+            {regularPrice > price && (
+              <span className="text-muted-foreground line-through text-sm">{regularPrice.toFixed(2)} €</span>
             )}
             <span className="text-accent font-black display">{price.toFixed(2)} €</span>
           </div>
