@@ -85,15 +85,15 @@ export default function ProductDetail() {
       </div>
 
       <div>
-        <div className="text-xs uppercase tracking-[0.3em] text-accent mb-2">{p.categories?.[0] || "Kami Street"}</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">{p.categories?.[0] || "Kami Street"}</div>
         <h1 className="display text-3xl md:text-4xl font-black mb-4" data-testid="product-title">{p.name}</h1>
         <div className="flex items-center gap-3 mb-6">
           {p.sale_price && <span className="text-muted-foreground line-through">{p.price.toFixed(2)} €</span>}
-          <span className="display text-3xl font-black text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
+          <span className="display text-3xl font-black text-black dark:text-accent" data-testid="product-price">{currentPrice.toFixed(2)} €</span>
         </div>
         {p.bundle_enabled && p.bundle_price > 0 && p.bundle_quantity > 1 && (
           <div className="border border-accent bg-accent/10 p-4 mb-6" data-testid="product-bundle-offer">
-            <div className="text-xs uppercase tracking-widest font-bold text-accent">Offre bundle</div>
+            <div className="text-xs uppercase tracking-widest font-bold text-black dark:text-accent">Offre spéciale</div>
             <div className="font-bold mt-1">{p.bundle_quantity} achetés pour {p.bundle_price.toFixed(2)} €</div>
             <div className="text-sm text-muted-foreground mt-1">L'offre s'applique automatiquement dès que la quantité est atteinte.</div>
           </div>
