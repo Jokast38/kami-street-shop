@@ -113,11 +113,17 @@ def normalize_alma_api_base_url(base_url: Optional[str], mode: str) -> str:
     default_base_url = "https://api.getalma.eu" if normalized_mode == "live" else "https://api.sandbox.getalma.eu"
     if not base_url:
         return default_base_url
+
     cleaned = base_url.strip().rstrip("/")
+    if cleaned.endswith("/v1"):
+        cleaned = cleaned[:-3]
+
     if cleaned in {"https://api.getalma.com", "https://api.getalma.com/"}:
         return "https://api.getalma.eu"
     if cleaned in {"https://api.sandbox.getalma.com", "https://api.sandbox.getalma.com/"}:
         return "https://api.sandbox.getalma.eu"
+    if cleaned in {"https://api.getalma.eu", "https://api.sandbox.getalma.eu"}:
+        return cleaned
     return cleaned
 
 
