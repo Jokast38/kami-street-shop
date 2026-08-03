@@ -633,10 +633,20 @@ function PaymentsPanel({ authAxios }) {
           <div>
             <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Klarna (paiement en plusieurs fois)</div>
             <div className="text-xs text-muted-foreground mt-1">
-              Affiche le badge "Payez en 3x avec Klarna" sur la boutique. Activez d'abord Klarna dans votre espace Mollie (Paiements → Moyens de paiement) avant d'activer ce switch.
+              Affiche le badge "Payez en 3x avec Klarna" sur la boutique pour les paniers de 300 € minimum. Activez d'abord Klarna dans votre espace Mollie (Paiements → Moyens de paiement) avant d'activer ce switch.
             </div>
           </div>
           <Switch checked={settings.klarna_enabled} onCheckedChange={v => update({ klarna_enabled: v })} data-testid="klarna-enabled-switch" />
+        </div>
+
+        <div className="border border-border p-4 flex items-center justify-between mb-4">
+          <div>
+            <div className="font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4" /> Alma (paiement en plusieurs fois)</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Affiche le badge "Payez en 3x avec Alma" sur la boutique pour les paniers de 300 € minimum.
+            </div>
+          </div>
+          <Switch checked={settings.alma_enabled} onCheckedChange={v => update({ alma_enabled: v })} data-testid="alma-enabled-switch" />
         </div>
 
         <Button onClick={save} disabled={saving} className="cta-primary rounded-none w-full" data-testid="payment-settings-save">

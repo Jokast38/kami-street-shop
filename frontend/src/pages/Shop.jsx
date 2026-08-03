@@ -17,7 +17,7 @@ export default function Shop() {
   const [search, setSearch] = useState("");
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [loading, setLoading] = useState(true);
-  const { klarna } = usePaymentMethods();
+  const { klarna, alma } = usePaymentMethods();
 
   const fetchData = useCallback(() => {
     setLoading(true);
@@ -49,11 +49,11 @@ export default function Shop() {
         <h1 className="display text-4xl md:text-5xl font-black" data-testid="shop-title">Boutique</h1>
       </div>
 
-      {klarna && (
+      {(klarna || alma) && (
         <div className="flex items-center gap-3 border border-accent/40 bg-accent/10 px-5 py-3 mb-8" data-testid="klarna-shop-banner">
           <SiKlarna className="w-6 h-6 shrink-0" style={{ color: "#FFB3C7" }} />
           <span className="text-sm font-semibold">
-            Payez en 3x sans frais avec Klarna, disponible sur tous nos produits.
+            Payez en 3x sans frais avec Klarna ou Alma, à partir de 300 € d’achat.
           </span>
         </div>
       )}

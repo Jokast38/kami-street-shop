@@ -72,6 +72,11 @@ MOLLIE_API_KEY = os.environ.get("MOLLIE_API_KEY", "")
 MOLLIE_MODE = os.environ.get("MOLLIE_MODE", "test")  # "test" | "live"
 MOLLIE_API_BASE = "https://api.mollie.com/v2"
 
+ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "")
+ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "")
+ALMA_API_BASE_URL = os.environ.get("ALMA_API_BASE_URL", "https://api.getalma.com")
+ALMA_API_MODE = os.environ.get("ALMA_MODE", "test")
+
 # Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
 # host if not set explicitly, since that one is already known to be publicly reachable.
 BACKEND_URL = os.environ.get("BACKEND_URL") or QONTO_REDIRECT_URI.split("/api/")[0]
@@ -221,6 +226,8 @@ class CheckoutIn(BaseModel):
     shipping_address: Dict[str, str]
     origin_url: str
     promo_code: Optional[str] = None
+    payment_provider: Optional[str] = None
+    payment_option: Optional[str] = None
 
 
 class PaymentSettingsIn(BaseModel):
@@ -233,6 +240,7 @@ class PaymentSettingsIn(BaseModel):
     qonto_vat_rate: str = "20.0"
     mollie_enabled: bool = False
     klarna_enabled: bool = False
+    alma_enabled: bool = False
 
 
 class InvoiceItemIn(BaseModel):
@@ -482,6 +490,7 @@ DEFAULT_PAYMENT_SETTINGS = {
     "qonto_vat_rate": "20.0",
     "mollie_enabled": False,
     "klarna_enabled": False,
+    "alma_enabled": False,
 }
 
 
@@ -581,7 +590,14 @@ async def public_payment_methods():
     qonto_ready = bool(settings.get("qonto_enabled") and tokens and tokens.get("access_token"))
     mollie_ready = bool(settings.get("mollie_enabled") and MOLLIE_API_KEY)
     klarna_ready = bool(mollie_ready and settings.get("klarna_enabled"))
-    return {"stripe": bool(settings.get("stripe_enabled", True)), "qonto": qonto_ready, "mollie": mollie_ready, "klarna": klarna_ready}
+    alma_ready = bool(mollie_ready and settings.get("alma_enabled"))
+    return {
+        "stripe": bool(settings.get("stripe_enabled", True)),
+        "qonto": qonto_ready,
+        "mollie": mollie_ready,
+        "klarna": klarna_ready,
+        "alma": alma_ready,
+    }
 
 
 @api.get("/admin/qonto/authorize-url")
@@ -1076,9 +1092,13 @@ async def calculate_checkout(body: CheckoutIn):
         quantity = it.quantity
         bundle_quantity = int(prod.get("bundle_quantity") or 2)
         bundle_price = prod.get("bundle_price")
-        bundles = quantity // bundle_quantity if prod.get("bundle_enabled") and bundle_price is not None and bundle_price > 0 else 0
+        use_bundle = bool(prod.get("bundle_enabled") and bundle_price is not None and bundle_price > 0)
+        bundles = quantity // bundle_quantity if use_bundle else 0
         remainder = quantity - (bundles * bundle_quantity)
-        charged = (bundles * bundle_price) + (remainder * unit_price)
+        if use_bundle and bundles:
+            charged = (bundles * bundle_price) + (remainder * unit_price)
+        else:
+            charged = quantity * unit_price
         total += charged
         priced_items.append({**it.model_dump(), "price": round(charged / quantity, 2), "regular_price": unit_price})
         if bundles:
@@ -1144,6 +1164,8 @@ async def create_checkout_session(body: CheckoutIn):
         "total": pricing["total"],
         "status": "pending",
         "payment_status": "pending",
+        "payment_provider": body.payment_provider or "stripe",
+        "payment_option": body.payment_option or "standard",
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
@@ -1236,7 +1258,141 @@ async def stripe_webhook(request: Request):
     return {"ok": True}
 
 
-# ----------------------------- Checkout (Qonto Payment Links) -----------------------------
+# ----------------------------- Checkout (Alma) -----------------------------
+async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int, installments: int):
+    if not ALMA_API_KEY or not ALMA_MERCHANT_ID:
+        raise HTTPException(400, "Les identifiants Alma ne sont pas configurés")
+
+    success_url = f"{body.origin_url}/checkout/success?session_id={order_no}"
+    cancel_url = f"{body.origin_url}/checkout/cancel"
+
+    payload_candidates = [
+        {
+            "merchant_id": ALMA_MERCHANT_ID,
+            "amount": total_cents,
+            "currency": "EUR",
+            "installments_count": installments,
+            "order_id": order_no,
+            "return_url": success_url,
+            "cancel_url": cancel_url,
+            "customer_email": body.customer_email,
+        },
+        {
+            "purchase_amount": total_cents,
+            "currency": "EUR",
+            "installments_count": installments,
+            "merchant_order_id": order_no,
+            "return_url": success_url,
+            "cancel_url": cancel_url,
+            "customer_email": body.customer_email,
+        },
+        {
+            "amount": total_cents,
+            "currency": "EUR",
+            "merchant_id": ALMA_MERCHANT_ID,
+            "transaction_id": order_no,
+            "installments_count": installments,
+            "return_url": success_url,
+            "cancel_url": cancel_url,
+        },
+    ]
+    header_candidates = [
+        {"Authorization": f"Bearer {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"},
+        {"X-Api-Key": ALMA_API_KEY, "Accept": "application/json", "Content-Type": "application/json"},
+        {"Authorization": f"AlmaApiKey {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"},
+    ]
+    endpoints = [
+        f"{ALMA_API_BASE_URL}/v1/payments",
+        f"{ALMA_API_BASE_URL}/payments",
+        f"{ALMA_API_BASE_URL}/v1/merchants/{ALMA_MERCHANT_ID}/payments",
+        f"{ALMA_API_BASE_URL}/merchants/{ALMA_MERCHANT_ID}/payments",
+    ]
+
+    last_error = None
+    for endpoint in endpoints:
+        for headers in header_candidates:
+            for payload in payload_candidates:
+                try:
+                    async with httpx.AsyncClient(timeout=30) as c:
+                        r = await c.post(endpoint, headers=headers, json=payload)
+                        if r.status_code < 400:
+                            try:
+                                data = r.json()
+                            except Exception:
+                                data = {}
+                            checkout_url = None
+                            if isinstance(data, dict):
+                                for key in ("checkout_url", "checkoutUrl", "url", "payment_url", "redirect_url", "href"):
+                                    value = data.get(key)
+                                    if isinstance(value, str) and value:
+                                        checkout_url = value
+                                        break
+                                if not checkout_url:
+                                    for nested_key in ("data", "payment", "checkout", "response", "transaction"):
+                                        nested = data.get(nested_key)
+                                        if isinstance(nested, dict):
+                                            for key in ("checkout_url", "checkoutUrl", "url", "payment_url", "redirect_url", "href"):
+                                                value = nested.get(key)
+                                                if isinstance(value, str) and value:
+                                                    checkout_url = value
+                                                    break
+                                        if checkout_url:
+                                            break
+                            if checkout_url:
+                                return checkout_url
+                        last_error = f"{endpoint} -> {r.status_code}: {r.text[:400]}"
+                except Exception as exc:
+                    last_error = f"{endpoint} -> {exc}"
+    raise HTTPException(502, f"Échec de création du paiement Alma: {last_error or 'réponse inattendue'}")
+
+
+@api.post("/checkout/alma-session")
+async def create_alma_checkout(body: CheckoutIn):
+    settings = await get_payment_settings()
+    if not settings.get("alma_enabled"):
+        raise HTTPException(400, "Le paiement en plusieurs fois Alma n'est pas activé")
+    pricing = await calculate_checkout(body)
+    if pricing["total"] < 300:
+        raise HTTPException(400, "Le paiement en plusieurs fois Alma est disponible à partir de 300 €")
+
+    payment_option = body.payment_option or "standard"
+    installments = 3
+    if payment_option != "standard":
+        if not payment_option.startswith("alma-"):
+            raise HTTPException(400, "Option de paiement Alma invalide")
+        installments = int(payment_option.replace("alma-", "").replace("x", ""))
+        if installments not in {3, 4, 6, 10, 12}:
+            raise HTTPException(400, "Le nombre de mensualités Alma doit être compris entre 3 et 12")
+
+    order_no = f"KS-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    order_id = str(uuid.uuid4())
+    order = {
+        "id": order_id,
+        "order_no": order_no,
+        "items": pricing["items"],
+        "customer_email": body.customer_email,
+        "customer_name": body.customer_name,
+        "shipping_address": body.shipping_address,
+        "subtotal": pricing["subtotal"],
+        "discount": pricing["discount"],
+        "promo_code": body.promo_code,
+        "total": pricing["total"],
+        "status": "pending",
+        "payment_status": "pending",
+        "provider": "alma",
+        "payment_provider": "alma",
+        "payment_option": payment_option,
+        "installments": installments,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    total_cents = int(round(pricing["total"] * 100))
+    checkout_url = await _create_alma_payment(body, order_no, total_cents, installments)
+    order["session_id"] = order_no
+    await db.orders.insert_one(order)
+    return {"checkout_url": checkout_url, "session_id": order_no, "order_no": order_no}
+
+
 @api.post("/checkout/qonto-session")
 async def create_qonto_checkout(body: CheckoutIn):
     settings = await get_payment_settings()
