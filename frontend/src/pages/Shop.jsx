@@ -51,9 +51,8 @@ export default function Shop() {
 
       {(klarna || alma) && (
         <div className="flex items-center gap-3 border border-accent/40 bg-accent/10 px-5 py-3 mb-8" data-testid="klarna-shop-banner">
-          <SiKlarna className="w-6 h-6 shrink-0" style={{ color: "#FFB3C7" }} />
           <span className="text-sm font-semibold">
-            Payez en 3x sans frais avec Klarna ou Alma, à partir de 300 € d’achat.
+            Payez en 12x avec Alma à partir de 300 € d’achat.
           </span>
         </div>
       )}
