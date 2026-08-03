@@ -1361,8 +1361,13 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
                         last_error = f"{endpoint} -> {r.status_code}: {r.text[:400]}"
                 except Exception as exc:
                     last_error = f"{endpoint} -> {exc}"
-    logging.warning("Alma checkout fallback enabled: %s", last_error or "aucune URL de checkout retournée")
-    return success_url
+
+    detail = last_error or "aucune URL de checkout retournée"
+    logging.error("Alma checkout failed: %s", detail)
+    raise HTTPException(
+        502,
+        f"Échec de création du paiement Alma. Vérifiez la clé API Alma, l’ID marchand et l’activation du compte dans le dashboard Alma. Détail: {detail}",
+    )
 
 
 @api.post("/checkout/alma-session")
