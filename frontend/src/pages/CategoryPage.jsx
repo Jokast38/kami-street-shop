@@ -61,12 +61,6 @@ export default function CategoryPage() {
         <h1 className="display text-3xl sm:text-4xl md:text-5xl font-black break-words" data-testid="category-title">
           {category?.name || "Catégorie"}
         </h1>
-        {category?.description && (
-          <div
-            className="category-description prose-ks text-muted-foreground mt-6"
-            dangerouslySetInnerHTML={{ __html: sanitizeCategoryHtml(category.description) }}
-          />
-        )}
       </div>
 
       {loading ? (
@@ -76,9 +70,19 @@ export default function CategoryPage() {
           Aucun produit dans cette catégorie pour le moment.
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6" data-testid="category-product-grid">
-          {products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6" data-testid="category-product-grid">
+            {products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
+          </div>
+          {category?.description && (
+            <div className="max-w-4xl mx-auto mt-10 pt-10 border-t border-border">
+              <div
+                className="category-description prose-ks text-muted-foreground"
+                dangerouslySetInnerHTML={{ __html: sanitizeCategoryHtml(category.description) }}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
