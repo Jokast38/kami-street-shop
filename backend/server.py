@@ -74,8 +74,7 @@ MOLLIE_API_BASE = "https://api.mollie.com/v2"
 
 ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "")
 ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "")
-ALMA_API_BASE_URL = os.environ.get("ALMA_API_BASE_URL", "https://api.getalma.com")
-ALMA_API_MODE = os.environ.get("ALMA_API_MODE", "test")
+ALMA_API_MODE = os.environ.get("ALMA_API_MODE", os.environ.get("ALMA_MODE", "test")).strip().lower()
 
 # Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
 # host if not set explicitly, since that one is already known to be publicly reachable.
@@ -107,6 +106,22 @@ def decode_html(text: str) -> str:
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_alma_api_base_url(base_url: Optional[str], mode: str) -> str:
+    normalized_mode = (mode or "").strip().lower()
+    default_base_url = "https://api.getalma.eu" if normalized_mode == "live" else "https://api.sandbox.getalma.eu"
+    if not base_url:
+        return default_base_url
+    cleaned = base_url.strip().rstrip("/")
+    if cleaned in {"https://api.getalma.com", "https://api.getalma.com/"}:
+        return "https://api.getalma.eu"
+    if cleaned in {"https://api.sandbox.getalma.com", "https://api.sandbox.getalma.com/"}:
+        return "https://api.sandbox.getalma.eu"
+    return cleaned
+
+
+ALMA_API_BASE_URL = normalize_alma_api_base_url(os.environ.get("ALMA_API_BASE_URL"), ALMA_API_MODE)
 
 
 def build_alma_redirect_urls(origin_url: str, order_no: str) -> Dict[str, str]:
@@ -1322,8 +1337,6 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
     endpoints = [
         f"{ALMA_API_BASE_URL}/v1/payments",
         f"{ALMA_API_BASE_URL}/payments",
-        f"{ALMA_API_BASE_URL}/v1/merchants/{ALMA_MERCHANT_ID}/payments",
-        f"{ALMA_API_BASE_URL}/merchants/{ALMA_MERCHANT_ID}/payments",
     ]
 
     last_error = None
