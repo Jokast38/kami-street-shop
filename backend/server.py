@@ -1342,7 +1342,6 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
     ]
     endpoints = [
         f"{ALMA_API_BASE_URL}/v1/payments",
-        f"{ALMA_API_BASE_URL}/payments",
     ]
 
     last_error = None
