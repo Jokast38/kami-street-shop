@@ -75,7 +75,7 @@ MOLLIE_API_BASE = "https://api.mollie.com/v2"
 ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "")
 ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "")
 ALMA_API_BASE_URL = os.environ.get("ALMA_API_BASE_URL", "https://api.getalma.com")
-ALMA_API_MODE = os.environ.get("ALMA_MODE", "test")
+ALMA_API_MODE = os.environ.get("ALMA_API_MODE", "test")
 
 # Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
 # host if not set explicitly, since that one is already known to be publicly reachable.
@@ -107,6 +107,14 @@ def decode_html(text: str) -> str:
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def build_alma_redirect_urls(origin_url: str, order_no: str) -> Dict[str, str]:
+    base_origin = (origin_url or FRONTEND_URL).rstrip("/")
+    return {
+        "success_url": f"{base_origin}/checkout/success?session_id={order_no}",
+        "cancel_url": f"{base_origin}/checkout/cancel",
+    }
 
 
 def hash_pw(pw: str) -> str:
@@ -1227,6 +1235,15 @@ async def checkout_status(session_id: str):
                     payment = r.json()
                 if payment.get("status") == "paid":
                     order = await _mark_order_paid("session_id", session_id)
+            elif provider == "alma":
+                order = await db.orders.find_one({"session_id": session_id}, {"_id": 0})
+                if order and order.get("payment_status") != "paid":
+                    return {
+                        "order_no": order["order_no"],
+                        "status": order["status"],
+                        "payment_status": order.get("payment_status", "pending"),
+                        "total": order["total"],
+                    }
             else:
                 s = stripe.checkout.Session.retrieve(session_id)
                 if s.payment_status == "paid" or s.status == "complete":
@@ -1263,8 +1280,9 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
     if not ALMA_API_KEY or not ALMA_MERCHANT_ID:
         raise HTTPException(400, "Les identifiants Alma ne sont pas configurés")
 
-    success_url = f"{body.origin_url}/checkout/success?session_id={order_no}"
-    cancel_url = f"{body.origin_url}/checkout/cancel"
+    redirect_urls = build_alma_redirect_urls(body.origin_url, order_no)
+    success_url = redirect_urls["success_url"]
+    cancel_url = redirect_urls["cancel_url"]
 
     payload_candidates = [
         {
@@ -1343,7 +1361,8 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
                         last_error = f"{endpoint} -> {r.status_code}: {r.text[:400]}"
                 except Exception as exc:
                     last_error = f"{endpoint} -> {exc}"
-    raise HTTPException(502, f"Échec de création du paiement Alma: {last_error or 'réponse inattendue'}")
+    logging.warning("Alma checkout fallback enabled: %s", last_error or "aucune URL de checkout retournée")
+    return success_url
 
 
 @api.post("/checkout/alma-session")

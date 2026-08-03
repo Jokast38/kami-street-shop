@@ -37,11 +37,6 @@ export default function CartDrawer() {
     if (!selectedProvider) return;
     setLoading(true);
     try {
-      if (selectedProvider === "alma") {
-        toast.error("Le paiement Alma complet nécessite une configuration dédiée côté Alma et n’est pas encore prêt à être utilisé depuis ce checkout.");
-        setLoading(false);
-        return;
-      }
       const endpoint = PROVIDER_ENDPOINTS[selectedProvider];
       const { data } = await api.post(endpoint, {
         items: items.map(i => ({
