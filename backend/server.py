@@ -1335,7 +1335,9 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
             "cancel_url": cancel_url,
         },
     ]
+    alma_key_scheme = "Alma-Live-Key" if ALMA_API_MODE == "live" else "Alma-Sandbox-Key"
     header_candidates = [
+        {"Authorization": f"{alma_key_scheme} {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"},
         {"Authorization": f"Bearer {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"},
         {"X-Api-Key": ALMA_API_KEY, "Accept": "application/json", "Content-Type": "application/json"},
         {"Authorization": f"AlmaApiKey {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"},
