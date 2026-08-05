@@ -1,14 +1,93 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Minus, Plus, ArrowRight } from "lucide-react";
+import { X, Minus, Plus, ArrowRight, MapPin, CreditCard, CheckCircle2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { usePaymentMethods } from "@/context/PaymentMethodsContext";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import KlarnaBadge from "@/components/KlarnaBadge";
+
+function AddressAutocomplete({ value, onSelect }) {
+  const [query, setQuery] = useState(value || "");
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef(null);
+
+  useEffect(() => setQuery(value || ""), [value]);
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    onSelect({ line1: val });
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.trim().length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(val)}&limit=5`
+        );
+        const data = await res.json();
+        setSuggestions(data.features || []);
+        setOpen(true);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 300);
+  };
+
+  const pick = (feature) => {
+    const p = feature.properties;
+    setQuery(p.name);
+    setOpen(false);
+    onSelect({
+      line1: p.name,
+      city: p.city,
+      postal_code: p.postcode,
+      country: "France",
+    });
+  };
+
+  return (
+    <div className="relative">
+      <Input
+        data-testid="checkout-address"
+        value={query}
+        onChange={handleChange}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="12 rue de la Paix, Paris..."
+        autoComplete="off"
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-background border border-border shadow-lg max-h-60 overflow-y-auto">
+          {suggestions.map((f) => (
+            <button
+              key={f.properties.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(f)}
+              className="w-full text-left px-3 py-2 text-sm flex items-start gap-2 hover:bg-muted transition-colors border-b border-border last:border-0"
+            >
+              <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+              <span>
+                <span className="font-medium">{f.properties.name}</span>
+                <span className="text-muted-foreground"> — {f.properties.postcode} {f.properties.city}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CartDrawer() {
   const { items, open, setOpen, removeItem, updateQty, total, clear, getLineTotal } = useCart();
@@ -106,37 +185,88 @@ export default function CartDrawer() {
           </>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
-              <div><Label>Nom complet</Label><Input data-testid="checkout-name" value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} /></div>
-              <div><Label>Email</Label><Input data-testid="checkout-email" type="email" value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })} /></div>
-              <div><Label>Adresse</Label><Input data-testid="checkout-address" value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label>Code postal</Label><Input data-testid="checkout-postal" value={form.postal_code} onChange={e => setForm({ ...form, postal_code: e.target.value })} /></div>
-                <div><Label>Ville</Label><Input data-testid="checkout-city" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="space-y-3">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Coordonnées</div>
+                <div><Label>Nom complet</Label><Input data-testid="checkout-name" value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} /></div>
+                <div><Label>Email</Label><Input data-testid="checkout-email" type="email" value={form.customer_email} onChange={e => setForm({ ...form, customer_email: e.target.value })} /></div>
               </div>
-              <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
-            </div>
-            <div className="p-6 border-t space-y-2">
-              <div className="flex justify-between font-bold"><span>Total</span><span className="display text-black dark:text-accent">{total.toFixed(2)} €</span></div>
-              <div><Label>Code promo</Label><Input placeholder="Votre code promo" value={promoCode} onChange={e => setPromoCode(e.target.value)} /></div>
+
+              <div className="space-y-3">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" /> Adresse de livraison
+                </div>
+                <div>
+                  <Label>Adresse</Label>
+                  <AddressAutocomplete
+                    value={form.line1}
+                    onSelect={(fields) => setForm(prev => ({ ...prev, ...fields }))}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Code postal</Label><Input data-testid="checkout-postal" value={form.postal_code} onChange={e => setForm({ ...form, postal_code: e.target.value })} /></div>
+                  <div><Label>Ville</Label><Input data-testid="checkout-city" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+                </div>
+                <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
+              </div>
+
               {alma && total >= MIN_INSTALLMENT_ELIGIBLE_AMOUNT && (
                 <div className="space-y-2">
-                  <Label>Type de paiement</Label>
-                  <select
-                    value={paymentType}
-                    onChange={e => setPaymentType(e.target.value)}
-                    className="w-full border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="standard">Paiement comptant</option>
-                    {installmentOptions.map(option => (
-                      <option key={option} value={`alma-${option}x`}>
-                        Paiement en {option}x avec Alma
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">Les paiements Alma sont proposés à partir de 300 €.</p>
+                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5" /> Mode de paiement
+                  </div>
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentType("standard")}
+                      className={`flex items-center justify-between border px-4 py-3 text-left transition-colors ${
+                        paymentType === "standard"
+                          ? "border-foreground bg-muted"
+                          : "border-border hover:border-foreground/50"
+                      }`}
+                    >
+                      <span className="text-sm font-medium">Paiement comptant</span>
+                      {paymentType === "standard" && <CheckCircle2 className="w-4 h-4" />}
+                    </button>
+                    {installmentOptions.map(option => {
+                      const value = `alma-${option}x`;
+                      const selected = paymentType === value;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setPaymentType(value)}
+                          className={`flex items-center justify-between border-2 px-4 py-3 text-left transition-colors ${
+                            selected
+                              ? "border-accent bg-accent/10"
+                              : "border-border hover:border-accent/60"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">{option}x sans frais</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-foreground text-background px-1.5 py-0.5">
+                              Alma
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{(total / option).toFixed(2)} €/mois</span>
+                            {selected && <CheckCircle2 className="w-4 h-4 text-accent" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Paiement en plusieurs fois avec Alma, proposé à partir de 300 €.</p>
                 </div>
               )}
+
+              <div>
+                <Label>Code promo</Label>
+                <Input placeholder="Votre code promo" value={promoCode} onChange={e => setPromoCode(e.target.value)} />
+              </div>
+            </div>
+            <div className="p-6 border-t space-y-2 shrink-0">
+              <div className="flex justify-between font-bold"><span>Total</span><span className="display text-black dark:text-accent">{total.toFixed(2)} €</span></div>
               <p className="text-xs text-muted-foreground">La remise sera vérifiée et appliquée au paiement.</p>
               <Button
                 disabled={loading || !form.customer_email || !form.customer_name || !form.line1 || !provider}
