@@ -94,25 +94,18 @@ export default function CartDrawer() {
   const [step, setStep] = useState("cart"); // cart | info
   const [form, setForm] = useState({ customer_name: "", customer_email: "", line1: "", city: "", postal_code: "", country: "France" });
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState(null);
   const [promoCode, setPromoCode] = useState("");
   const [paymentType, setPaymentType] = useState("standard");
-  const { alma, stripe: stripeEnabled, qonto: qontoEnabled, mollie: mollieEnabled } = usePaymentMethods();
+  const { alma, stripe: stripeEnabled, qonto: qontoEnabled, mollie: mollieEnabled, klarna: klarnaEnabled } = usePaymentMethods();
 
-  const PROVIDER_LABELS = { stripe: "Stripe", qonto: "Qonto", mollie: "Mollie", alma: "Alma" };
   const PROVIDER_ENDPOINTS = { stripe: "/checkout/session", qonto: "/checkout/qonto-session", mollie: "/checkout/mollie-session", alma: "/checkout/alma-session" };
   const MIN_INSTALLMENT_ELIGIBLE_AMOUNT = 300;
   const installmentOptions = alma && total >= MIN_INSTALLMENT_ELIGIBLE_AMOUNT ? [3, 4, 6, 10, 12] : [];
 
-  useEffect(() => {
-    api.get("/payment-methods").then(r => {
-      const active = ["stripe", "qonto", "mollie", "alma"].find(p => r.data[p]);
-      setProvider(active || null);
-    }).catch(() => {});
-  }, []);
-
   const submit = async () => {
-    const selectedProvider = paymentType.startsWith("alma-") ? "alma" : provider;
+    const selectedProvider = paymentType.startsWith("alma-")
+      ? "alma"
+      : "mollie";
     if (!selectedProvider) return;
     setLoading(true);
     try {
@@ -210,8 +203,7 @@ export default function CartDrawer() {
                 <div><Label>Pays</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
               </div>
 
-              {alma && total >= MIN_INSTALLMENT_ELIGIBLE_AMOUNT && (
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                     <CreditCard className="w-3.5 h-3.5" /> Mode de paiement
                   </div>
@@ -225,9 +217,23 @@ export default function CartDrawer() {
                           : "border-border hover:border-foreground/50"
                       }`}
                     >
-                      <span className="text-sm font-medium">Paiement comptant</span>
+                      <span className="text-sm font-medium">Comptant</span>
                       {paymentType === "standard" && <CheckCircle2 className="w-4 h-4" />}
                     </button>
+                    {klarnaEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentType("klarna")}
+                        className={`flex items-center justify-between border px-4 py-3 text-left transition-colors ${
+                          paymentType === "klarna"
+                            ? "border-foreground bg-muted"
+                            : "border-border hover:border-foreground/50"
+                        }`}
+                      >
+                        <span className="text-sm font-medium">Payer avec Klarna</span>
+                        {paymentType === "klarna" && <CheckCircle2 className="w-4 h-4" />}
+                      </button>
+                    )}
                     {installmentOptions.map(option => {
                       const value = `alma-${option}x`;
                       const selected = paymentType === value;
@@ -256,9 +262,10 @@ export default function CartDrawer() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-muted-foreground">Paiement en plusieurs fois avec Alma, proposé à partir de 300 €.</p>
-                </div>
-              )}
+                  {installmentOptions.length > 0 && (
+                    <p className="text-xs text-muted-foreground">Paiement en plusieurs fois avec Alma, proposé à partir de 300 €.</p>
+                  )}
+              </div>
 
               <div>
                 <Label>Code promo</Label>
@@ -269,12 +276,14 @@ export default function CartDrawer() {
               <div className="flex justify-between font-bold"><span>Total</span><span className="display text-black dark:text-accent">{total.toFixed(2)} €</span></div>
               <p className="text-xs text-muted-foreground">La remise sera vérifiée et appliquée au paiement.</p>
               <Button
-                disabled={loading || !form.customer_email || !form.customer_name || !form.line1 || !provider}
+                disabled={loading || !form.customer_email || !form.customer_name || !form.line1}
                 className="w-full cta-primary rounded-none h-12"
                 onClick={submit}
                 data-testid="checkout-pay-btn"
               >
-                {loading ? "Redirection..." : provider ? `Payer avec ${paymentType.startsWith("alma-") ? "Alma" : PROVIDER_LABELS[provider]}` : "Aucun moyen de paiement disponible"}
+                {loading
+                  ? "Redirection..."
+                  : `Payer avec ${paymentType.startsWith("alma-") ? "Alma" : paymentType === "klarna" ? "Klarna" : "Mollie"}`}
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setStep("cart")}>Retour au panier</Button>
             </div>

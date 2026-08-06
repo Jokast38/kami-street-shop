@@ -1539,6 +1539,42 @@ async def create_mollie_checkout(body: CheckoutIn):
         "redirectUrl": f"{body.origin_url}/checkout/success?session_id={order_id}",
         "metadata": {"order_id": order_id, "order_no": order_no},
     }
+    if body.payment_option == "klarna":
+        payment_payload["method"] = "klarna"
+        payment_payload["billingAddress"] = {
+            "streetAndNumber": body.shipping_address.get("line1", ""),
+            "city": body.shipping_address.get("city", ""),
+            "postalCode": body.shipping_address.get("postal_code", ""),
+            "country": "FR",
+            "email": body.customer_email,
+            "givenName": (body.customer_name or "").split(" ")[0] or body.customer_name,
+            "familyName": " ".join((body.customer_name or "").split(" ")[1:]) or body.customer_name,
+        }
+        vat_rate = 20.0
+        discount_ratio = (pricing["discount"] / pricing["subtotal"]) if pricing["subtotal"] else 0.0
+        lines = []
+        lines_total = 0.0
+        for item in pricing["line_items"]:
+            gross = round(item["price"] * item["quantity"], 2)
+            total_amount = round(gross * (1 - discount_ratio), 2)
+            vat_amount = round(total_amount - (total_amount / (1 + vat_rate / 100)), 2)
+            lines_total += total_amount
+            lines.append({
+                "description": item["name"],
+                "quantity": item["quantity"],
+                "unitPrice": {"currency": "EUR", "value": f"{item['price']:.2f}"},
+                "totalAmount": {"currency": "EUR", "value": f"{total_amount:.2f}"},
+                "vatRate": f"{vat_rate:.2f}",
+                "vatAmount": {"currency": "EUR", "value": f"{vat_amount:.2f}"},
+            })
+        # Mollie requires the sum of line totals to exactly match the payment amount; push any rounding remainder onto the last line.
+        rounding_remainder = round(pricing["total"] - lines_total, 2)
+        if lines and rounding_remainder:
+            last = lines[-1]
+            adjusted = round(float(last["totalAmount"]["value"]) + rounding_remainder, 2)
+            last["totalAmount"]["value"] = f"{adjusted:.2f}"
+            last["vatAmount"]["value"] = f"{round(adjusted - (adjusted / (1 + vat_rate / 100)), 2):.2f}"
+        payment_payload["lines"] = lines
     # Mollie rejects webhookUrl values it can't reach from the internet (e.g. localhost in dev).
     # /checkout/status already re-verifies against Mollie's API as a fallback, so this is safe to omit locally.
     if not re.search(r"localhost|127\.0\.0\.1", BACKEND_URL):
@@ -1568,6 +1604,7 @@ async def create_mollie_checkout(body: CheckoutIn):
         "status": "pending",
         "payment_status": "pending",
         "provider": "mollie",
+        "payment_option": body.payment_option or "standard",
         "session_id": order_id,
         "mollie_payment_id": payment["id"],
         "created_at": now_iso(),
