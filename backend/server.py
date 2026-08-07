@@ -130,6 +130,11 @@ def normalize_alma_api_base_url(base_url: Optional[str], mode: str) -> str:
 ALMA_API_BASE_URL = normalize_alma_api_base_url(os.environ.get("ALMA_API_BASE_URL"), ALMA_API_MODE)
 
 
+def alma_auth_headers() -> Dict[str, str]:
+    scheme = "Alma-Live-Key" if ALMA_API_MODE == "live" else "Alma-Sandbox-Key"
+    return {"Authorization": f"{scheme} {ALMA_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"}
+
+
 def build_alma_redirect_urls(origin_url: str, order_no: str) -> Dict[str, str]:
     base_origin = (origin_url or FRONTEND_URL).rstrip("/")
     return {
@@ -1256,15 +1261,17 @@ async def checkout_status(session_id: str):
                     payment = r.json()
                 if payment.get("status") == "paid":
                     order = await _mark_order_paid("session_id", session_id)
-            elif provider == "alma":
-                order = await db.orders.find_one({"session_id": session_id}, {"_id": 0})
-                if order and order.get("payment_status") != "paid":
-                    return {
-                        "order_no": order["order_no"],
-                        "status": order["status"],
-                        "payment_status": order.get("payment_status", "pending"),
-                        "total": order["total"],
-                    }
+            elif provider == "alma" and order.get("alma_payment_id"):
+                async with httpx.AsyncClient(timeout=30) as c:
+                    r = await c.get(
+                        f"{ALMA_API_BASE_URL}/v1/payments/{order['alma_payment_id']}",
+                        headers=alma_auth_headers(),
+                    )
+                    r.raise_for_status()
+                    payment = r.json()
+                # Alma considers the order fulfillable once installments are confirmed ("in_progress" or "paid").
+                if payment.get("state") in {"in_progress", "paid"}:
+                    order = await _mark_order_paid("session_id", session_id)
             else:
                 s = stripe.checkout.Session.retrieve(session_id)
                 if s.payment_status == "paid" or s.status == "complete":
@@ -1293,6 +1300,34 @@ async def stripe_webhook(request: Request):
         order = await db.orders.find_one({"session_id": obj["id"]}, {"_id": 0})
         if order and order.get("payment_status") != "paid":
             await _mark_order_paid("session_id", obj["id"])
+    return {"ok": True}
+
+
+@api.post("/alma/webhook")
+async def alma_webhook(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    payment_id = body.get("id") or body.get("payment_id")
+    if not payment_id:
+        return {"ok": True}
+
+    order = await db.orders.find_one({"alma_payment_id": payment_id}, {"_id": 0})
+    if not order or order.get("payment_status") == "paid":
+        return {"ok": True}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{ALMA_API_BASE_URL}/v1/payments/{payment_id}", headers=alma_auth_headers())
+            r.raise_for_status()
+            payment = r.json()
+    except Exception as e:
+        logging.error(f"Alma webhook sync err: {e}")
+        return {"ok": True}
+
+    if payment.get("state") in {"in_progress", "paid"}:
+        await _mark_order_paid("session_id", order["session_id"])
     return {"ok": True}
 
 
@@ -1377,7 +1412,8 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
                                         if checkout_url:
                                             break
                             if checkout_url:
-                                return checkout_url
+                                payment_id = data.get("id") if isinstance(data, dict) else None
+                                return checkout_url, payment_id
                         last_error = f"{endpoint} -> {r.status_code}: {r.text[:400]}"
                 except Exception as exc:
                     last_error = f"{endpoint} -> {exc}"
@@ -1431,8 +1467,9 @@ async def create_alma_checkout(body: CheckoutIn):
         "updated_at": now_iso(),
     }
     total_cents = int(round(pricing["total"] * 100))
-    checkout_url = await _create_alma_payment(body, order_no, total_cents, installments)
+    checkout_url, alma_payment_id = await _create_alma_payment(body, order_no, total_cents, installments)
     order["session_id"] = order_no
+    order["alma_payment_id"] = alma_payment_id
     await db.orders.insert_one(order)
     return {"checkout_url": checkout_url, "session_id": order_no, "order_no": order_no}
 
