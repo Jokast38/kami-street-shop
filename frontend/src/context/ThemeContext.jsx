@@ -11,7 +11,7 @@ export const ThemeProvider = ({ children }) => {
     localStorage.setItem("ks_theme", theme);
   }, [theme]);
 
-  const toggle = () => setTheme((t) => (t === "light" ? "light" : "dark"));
+  const toggle = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
   return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
 };
