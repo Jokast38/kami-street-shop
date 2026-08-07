@@ -72,8 +72,8 @@ MOLLIE_API_KEY = os.environ.get("MOLLIE_API_KEY", "")
 MOLLIE_MODE = os.environ.get("MOLLIE_MODE", "test")  # "test" | "live"
 MOLLIE_API_BASE = "https://api.mollie.com/v2"
 
-ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "")
-ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "")
+ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "").strip()
+ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "").strip()
 ALMA_API_MODE = os.environ.get("ALMA_API_MODE", os.environ.get("ALMA_MODE", "test")).strip().lower()
 
 # Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
@@ -1424,6 +1424,23 @@ async def _create_alma_payment(body: CheckoutIn, order_no: str, total_cents: int
         502,
         f"Échec de création du paiement Alma. Vérifiez la clé API Alma, l’ID marchand et l’activation du compte dans le dashboard Alma. Détail: {detail}",
     )
+
+
+@api.get("/admin/alma/diagnostic")
+async def alma_diagnostic(user=Depends(current_admin)):
+    def describe(value: str) -> Dict[str, Any]:
+        return {
+            "length": len(value),
+            "prefix": value[:8] if value else "",
+            "suffix": value[-4:] if value else "",
+            "has_leading_or_trailing_whitespace": value != value.strip(),
+        }
+    return {
+        "mode": ALMA_API_MODE,
+        "base_url": ALMA_API_BASE_URL,
+        "api_key": describe(os.environ.get("ALMA_API_KEY", "")),
+        "merchant_id": describe(os.environ.get("ID_ALMA_MERCHANT", "")),
+    }
 
 
 @api.post("/checkout/alma-session")
