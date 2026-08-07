@@ -3,6 +3,11 @@ import asyncio
 import logging
 import re
 import html
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -45,6 +50,12 @@ stripe.api_key = STRIPE_SECRET_KEY
 BREVO_API_KEY = os.environ["BREVO_V3_API_KEY"]
 BREVO_SENDER_EMAIL = os.environ["BREVO_SENDER_EMAIL"]
 BREVO_SENDER_NAME = os.environ["BREVO_SENDER_NAME"]
+
+SMTP_HOST = os.environ.get("HOSTINGER_MAIL_HOST", "")
+SMTP_PORT = int(os.environ.get("HOSTINGER_MAIL_PORT", "465"))
+SMTP_USER = os.environ.get("HOSTINGER_MAIL_USER", "")
+SMTP_PASSWORD = os.environ.get("HOSTINGER_API_KEY", "")
+SMTP_SENDER_NAME = os.environ.get("HOSTINGER_SENDER_NAME", "Kami Street")
 
 WOO_KEY = os.environ["WOOCOMMERCE_KEY_K"]
 WOO_SECRET = os.environ["WOOCOMMERCE_SECRET_K"]
@@ -310,8 +321,33 @@ class InvoiceIn(BaseModel):
     notes: str = ""
 
 
-# ----------------------------- Brevo email -----------------------------
-async def send_email(to_email: str, to_name: str, subject: str, html: str):
+# ----------------------------- Email (Hostinger SMTP, Brevo fallback) -----------------------------
+def _send_smtp_sync(to_email: str, to_name: str, subject: str, html_body: str, attachment: Optional[Dict[str, Any]] = None):
+    msg = MIMEMultipart()
+    msg["From"] = f"{SMTP_SENDER_NAME} <{SMTP_USER}>"
+    msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html"))
+    if attachment:
+        part = MIMEApplication(attachment["content"], Name=attachment["filename"])
+        part["Content-Disposition"] = f'attachment; filename="{attachment["filename"]}"'
+        msg.attach(part)
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as server:
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+
+
+async def send_email(to_email: str, to_name: str, subject: str, html: str, attachment: Optional[Dict[str, Any]] = None):
+    if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
+        try:
+            await asyncio.to_thread(_send_smtp_sync, to_email, to_name, subject, html, attachment)
+            return 200, "ok"
+        except Exception as e:
+            logging.error(f"Hostinger SMTP error: {e}")
+            return 500, str(e)
+
+    # Fallback: Brevo (no attachment support here)
     payload = {
         "sender": {"name": BREVO_SENDER_NAME, "email": BREVO_SENDER_EMAIL},
         "to": [{"email": to_email, "name": to_name}],
@@ -1169,6 +1205,33 @@ async def invoice_pdf(iid: str, user=Depends(current_staff)):
     )
 
 
+@api.post("/admin/invoices/{iid}/send")
+async def send_invoice_email(iid: str, user=Depends(current_staff)):
+    invoice = await db.invoices.find_one({"id": iid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(404, "Facture introuvable")
+    if not invoice.get("customer_email"):
+        raise HTTPException(400, "Cette facture n'a pas d'email client")
+    pdf_bytes = generate_invoice_pdf(invoice)
+    html_body = f"""
+    <div style="font-family:Helvetica,Arial,sans-serif;max-width:520px;margin:auto">
+      <p>Bonjour {html.escape(invoice.get('customer_name', ''))},</p>
+      <p>Veuillez trouver ci-joint votre facture <b>{invoice['invoice_no']}</b>{f" pour la commande {invoice.get('order_no')}" if invoice.get('order_no') else ''}.</p>
+      <p style="opacity:.7;font-size:12px">Kami Street · kamistreet.fr</p>
+    </div>
+    """
+    status_code, detail = await send_email(
+        invoice["customer_email"],
+        invoice.get("customer_name", ""),
+        f"Votre facture {invoice['invoice_no']} — Kami Street",
+        html_body,
+        attachment={"filename": f"{invoice['invoice_no']}.pdf", "content": pdf_bytes},
+    )
+    if status_code >= 400:
+        raise HTTPException(502, f"Échec de l'envoi de l'email: {detail[:200]}")
+    return {"ok": True}
+
+
 @api.get("/admin/stats")
 async def admin_stats(user=Depends(current_staff)):
     total_products = await db.products.count_documents({})
@@ -1968,7 +2031,12 @@ async def sync_woo_orders(user=Depends(current_staff)):
                             "product_id": str(li.get("product_id", "")),
                             "variation_id": str(li["variation_id"]) if li.get("variation_id") else None,
                             "name": li.get("name", ""),
-                            "price": float(li.get("price") or 0),
+                            # WooCommerce's "price" is HT (excl. tax); the rest of the app treats item
+                            # prices as TTC, so derive the TTC unit price from total + total_tax.
+                            "price": round(
+                                (float(li.get("total") or 0) + float(li.get("total_tax") or 0)) / (li.get("quantity") or 1),
+                                2,
+                            ),
                             "quantity": li.get("quantity", 1),
                             "image": (li.get("image") or {}).get("src"),
                         }

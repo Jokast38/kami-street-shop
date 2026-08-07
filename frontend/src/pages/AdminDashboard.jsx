@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users, Send } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
@@ -667,15 +667,20 @@ function PaymentsPanel({ authAxios }) {
 }
 
 function computeInvoiceTotals(invoice) {
-  const subtotal = (invoice.items || []).reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0) * (parseInt(i.quantity) || 0), 0);
-  const tax = subtotal * ((parseFloat(invoice.tax_rate) || 0) / 100);
-  return { subtotal, tax, total: subtotal + tax };
+  // unit_price is already TTC (VAT included) — derive HT/VAT from it instead of adding VAT on top,
+  // so the displayed TOTAL TTC always matches the actual product price.
+  const totalTtc = (invoice.items || []).reduce((sum, i) => sum + (parseFloat(i.unit_price) || 0) * (parseInt(i.quantity) || 0), 0);
+  const taxRate = (parseFloat(invoice.tax_rate) || 0) / 100;
+  const subtotal = taxRate ? totalTtc / (1 + taxRate) : totalTtc;
+  const tax = totalTtc - subtotal;
+  return { subtotal, tax, total: totalTtc };
 }
 
 function InvoicesPanel({ items, orders, authAxios, reload }) {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
+  const [sendingId, setSendingId] = useState(null);
 
   const emptyInvoice = {
     order_id: null, order_no: "", customer_name: "", customer_email: "",
@@ -746,6 +751,16 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
     } finally { setDownloadingId(null); }
   };
 
+  const sendByEmail = async (inv) => {
+    setSendingId(inv.id);
+    try {
+      await authAxios.post(`/admin/invoices/${inv.id}/send`);
+      toast.success(`Facture envoyée à ${inv.customer_email}`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur lors de l'envoi");
+    } finally { setSendingId(null); }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
@@ -789,6 +804,9 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
                   <td className="p-3 text-right whitespace-nowrap">
                     <Button size="icon" variant="ghost" onClick={() => downloadPdf(inv)} disabled={downloadingId === inv.id} data-testid={`invoice-download-${inv.id}`}>
                       <Download className="w-4 h-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => sendByEmail(inv)} disabled={sendingId === inv.id || !inv.customer_email} data-testid={`invoice-send-${inv.id}`} title="Envoyer par email">
+                      <Send className="w-4 h-4" />
                     </Button>
                     <Button size="icon" variant="ghost" onClick={() => openEdit(inv)}><Edit className="w-4 h-4" /></Button>
                     <Button size="icon" variant="ghost" onClick={() => del(inv.id)}><Trash2 className="w-4 h-4" /></Button>
@@ -852,8 +870,8 @@ function CollaboratorsPanel({ authAxios, currentEmail }) {
   const empty = { email: "", password: "", role: "employee" };
   const [form, setForm] = useState(empty);
 
-  const load = () => authAxios.get("/admin/collaborators").then(r => setItems(r.data)).catch(() => {});
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => authAxios.get("/admin/collaborators").then(r => setItems(r.data)).catch(() => {}), [authAxios]);
+  useEffect(() => { load(); }, [load]);
 
   const create = async () => {
     try {
