@@ -11,12 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
 export default function AdminDashboard() {
-  const { email, logout, authAxios } = useAuth();
+  const { email, role, logout, authAxios } = useAuth();
+  const isAdmin = role === "admin";
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const [stats, setStats] = useState({});
@@ -93,9 +94,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="orders" data-testid="tab-orders" className="shrink-0">Commandes</TabsTrigger>
             <TabsTrigger value="blog" data-testid="tab-blog" className="shrink-0">Blog</TabsTrigger>
             <TabsTrigger value="banners" data-testid="tab-banners" className="shrink-0">Bannières</TabsTrigger>
-            <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>
+            {isAdmin && <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>}
             <TabsTrigger value="invoices" data-testid="tab-invoices" className="shrink-0">Factures</TabsTrigger>
             <TabsTrigger value="promos" data-testid="tab-promos" className="shrink-0">Codes promo</TabsTrigger>
+            {isAdmin && <TabsTrigger value="collaborators" data-testid="tab-collaborators" className="shrink-0">Collaborateurs</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="products" className="mt-6">
@@ -110,15 +112,22 @@ export default function AdminDashboard() {
           <TabsContent value="banners" className="mt-6">
             <BannersPanel items={banners} authAxios={authAxios} reload={loadAll} />
           </TabsContent>
-          <TabsContent value="payments" className="mt-6">
-            <PaymentsPanel authAxios={authAxios} />
-          </TabsContent>
+          {isAdmin && (
+            <TabsContent value="payments" className="mt-6">
+              <PaymentsPanel authAxios={authAxios} />
+            </TabsContent>
+          )}
           <TabsContent value="invoices" className="mt-6">
             <InvoicesPanel items={invoices} orders={orders} authAxios={authAxios} reload={loadAll} />
           </TabsContent>
           <TabsContent value="promos" className="mt-6">
             <PromosPanel items={promos} authAxios={authAxios} reload={loadAll} />
           </TabsContent>
+          {isAdmin && (
+            <TabsContent value="collaborators" className="mt-6">
+              <CollaboratorsPanel authAxios={authAxios} currentEmail={email} />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>
@@ -830,6 +839,94 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
             <div><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
 
             <Button onClick={save} className="cta-primary rounded-none w-full" data-testid="invoice-form-save">Enregistrer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CollaboratorsPanel({ authAxios, currentEmail }) {
+  const [items, setItems] = useState([]);
+  const [open, setOpen] = useState(false);
+  const empty = { email: "", password: "", role: "employee" };
+  const [form, setForm] = useState(empty);
+
+  const load = () => authAxios.get("/admin/collaborators").then(r => setItems(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    try {
+      await authAxios.post("/admin/collaborators", form);
+      toast.success("Collaborateur ajouté");
+      setOpen(false); setForm(empty); load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const changeRole = async (id, role) => {
+    try { await authAxios.put(`/admin/collaborators/${id}`, { role }); toast.success("Rôle mis à jour"); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("Supprimer ce collaborateur ?")) return;
+    try { await authAxios.delete(`/admin/collaborators/${id}`); toast.success("Supprimé"); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between mb-4 items-center">
+        <h2 className="display text-xl font-bold flex items-center gap-2"><Users className="w-5 h-5" />Collaborateurs ({items.length})</h2>
+        <Button className="cta-primary rounded-none" onClick={() => { setForm(empty); setOpen(true); }} data-testid="new-collaborator-btn">
+          <Plus className="w-4 h-4 mr-2" />Nouveau
+        </Button>
+      </div>
+      <div className="border border-border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-secondary"><tr>
+            <th className="text-left p-3">Email</th><th className="text-left p-3">Rôle</th>
+            <th className="text-left p-3">Ajouté le</th><th></th>
+          </tr></thead>
+          <tbody>
+            {items.map(u => (
+              <tr key={u.id} className="border-t border-border" data-testid={`collaborator-row-${u.id}`}>
+                <td className="p-3">{u.email}{u.email === currentEmail && <span className="text-xs text-muted-foreground ml-1">(vous)</span>}</td>
+                <td className="p-3">
+                  <Select value={u.role} onValueChange={v => changeRole(u.id, v)}>
+                    <SelectTrigger className="w-36 h-8 rounded-none text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="employee">Employé</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </td>
+                <td className="p-3 text-xs">{u.created_at ? new Date(u.created_at).toLocaleDateString("fr-FR") : "—"}</td>
+                <td className="p-3 text-right">
+                  <Button size="icon" variant="ghost" onClick={() => del(u.id)}><Trash2 className="w-4 h-4" /></Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nouveau collaborateur</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+            <div><Label>Mot de passe</Label><Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
+            <div>
+              <Label>Rôle</Label>
+              <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
+                <SelectTrigger className="rounded-none"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="employee">Employé</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={create} className="cta-primary rounded-none w-full">Créer</Button>
           </div>
         </DialogContent>
       </Dialog>

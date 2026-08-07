@@ -8,6 +8,7 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("admin_token"));
   const [email, setEmail] = useState(localStorage.getItem("admin_email"));
+  const [role, setRole] = useState(localStorage.getItem("admin_role"));
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -20,13 +21,17 @@ export const AuthProvider = ({ children }) => {
       .then(({ data }) => {
         setToken(storedToken);
         setEmail(data.email);
+        setRole(data.role);
         localStorage.setItem("admin_email", data.email);
+        localStorage.setItem("admin_role", data.role);
       })
       .catch(() => {
         localStorage.removeItem("admin_token");
         localStorage.removeItem("admin_email");
+        localStorage.removeItem("admin_role");
         setToken(null);
         setEmail(null);
+        setRole(null);
       })
       .finally(() => setAuthReady(true));
   }, []);
@@ -35,16 +40,20 @@ export const AuthProvider = ({ children }) => {
     const { data } = await axios.post(`${API}/auth/login`, { email: em, password });
     localStorage.setItem("admin_token", data.access_token);
     localStorage.setItem("admin_email", data.email);
+    localStorage.setItem("admin_role", data.role);
     setToken(data.access_token);
     setEmail(data.email);
+    setRole(data.role);
     return data;
   };
 
   const logout = () => {
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_email");
+    localStorage.removeItem("admin_role");
     setToken(null);
     setEmail(null);
+    setRole(null);
   };
 
   const authAxios = axios.create({ baseURL: API });
@@ -63,7 +72,7 @@ export const AuthProvider = ({ children }) => {
   );
 
   return (
-    <AuthContext.Provider value={{ token, email, login, logout, authAxios, authReady }}>
+    <AuthContext.Provider value={{ token, email, role, login, logout, authAxios, authReady }}>
       {children}
     </AuthContext.Provider>
   );

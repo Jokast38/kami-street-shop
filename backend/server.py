@@ -159,16 +159,32 @@ def make_token(email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-async def current_admin(token: Optional[str] = Depends(oauth2_scheme)):
+async def _current_user(token: Optional[str]) -> dict:
     if not token:
         raise HTTPException(401, "Missing token")
     try:
         data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
-        user = await db.users.find_one({"email": data["sub"], "role": "admin"}, {"_id": 0})
+        user = await db.users.find_one({"email": data["sub"]}, {"_id": 0})
     except Exception:
         raise HTTPException(401, "Invalid token")
     if not user:
         raise HTTPException(401, "Not authorized")
+    return user
+
+
+async def current_staff(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
+    """Accepts both admin and employee collaborators."""
+    user = await _current_user(token)
+    if user.get("role") not in ("admin", "employee"):
+        raise HTTPException(401, "Not authorized")
+    return user
+
+
+async def current_admin(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
+    """Admin-only: used for payment settings and collaborator management."""
+    user = await _current_user(token)
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Réservé aux administrateurs")
     return user
 
 
@@ -413,15 +429,80 @@ async def startup():
 # ----------------------------- Auth routes -----------------------------
 @api.post("/auth/login")
 async def login(body: LoginIn):
-    user = await db.users.find_one({"email": body.email, "role": "admin"})
+    user = await db.users.find_one({"email": body.email, "role": {"$in": ["admin", "employee"]}})
     if not user or not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(400, "Identifiants invalides")
-    return {"access_token": make_token(user["email"]), "token_type": "bearer", "email": user["email"]}
+    return {"access_token": make_token(user["email"]), "token_type": "bearer", "email": user["email"], "role": user["role"]}
 
 
 @api.get("/auth/me")
-async def me(user=Depends(current_admin)):
+async def me(user=Depends(current_staff)):
     return {"email": user["email"], "role": user["role"]}
+
+
+# ----------------------------- Collaborators (admin-only) -----------------------------
+class CollaboratorIn(BaseModel):
+    email: EmailStr
+    password: str
+    role: str = "employee"
+
+
+class CollaboratorRoleIn(BaseModel):
+    role: str
+
+
+@api.get("/admin/collaborators")
+async def list_collaborators(user=Depends(current_admin)):
+    docs = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(200)
+    return docs
+
+
+@api.post("/admin/collaborators")
+async def create_collaborator(body: CollaboratorIn, user=Depends(current_admin)):
+    if body.role not in ("admin", "employee"):
+        raise HTTPException(400, "Rôle invalide")
+    if len(body.password) < 8:
+        raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
+    existing = await db.users.find_one({"email": body.email})
+    if existing:
+        raise HTTPException(400, "Un compte existe déjà avec cet email")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "email": body.email,
+        "password_hash": hash_pw(body.password),
+        "role": body.role,
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one(doc)
+    return {"id": doc["id"], "email": doc["email"], "role": doc["role"], "created_at": doc["created_at"]}
+
+
+@api.put("/admin/collaborators/{collaborator_id}")
+async def update_collaborator_role(collaborator_id: str, body: CollaboratorRoleIn, user=Depends(current_admin)):
+    if body.role not in ("admin", "employee"):
+        raise HTTPException(400, "Rôle invalide")
+    target = await db.users.find_one({"id": collaborator_id})
+    if not target:
+        raise HTTPException(404, "Collaborateur introuvable")
+    if target["email"] == user["email"] and body.role != "admin":
+        raise HTTPException(400, "Vous ne pouvez pas retirer vos propres droits admin")
+    await db.users.update_one({"id": collaborator_id}, {"$set": {"role": body.role}})
+    return {"ok": True}
+
+
+@api.delete("/admin/collaborators/{collaborator_id}")
+async def delete_collaborator(collaborator_id: str, user=Depends(current_admin)):
+    target = await db.users.find_one({"id": collaborator_id})
+    if not target:
+        raise HTTPException(404, "Collaborateur introuvable")
+    if target["email"] == user["email"]:
+        raise HTTPException(400, "Vous ne pouvez pas supprimer votre propre compte")
+    if target["role"] == "admin":
+        remaining_admins = await db.users.count_documents({"role": "admin", "id": {"$ne": collaborator_id}})
+        if remaining_admins == 0:
+            raise HTTPException(400, "Impossible de supprimer le dernier administrateur")
+    await db.users.delete_one({"id": collaborator_id})
+    return {"ok": True}
 
 
 # ----------------------------- Public catalog -----------------------------
@@ -826,7 +907,7 @@ async def chat(body: ChatIn):
 
 # ----------------------------- Admin: Products CRUD -----------------------------
 @api.post("/admin/products")
-async def create_product(body: ProductIn, user=Depends(current_admin)):
+async def create_product(body: ProductIn, user=Depends(current_staff)):
     p = body.model_dump()
     p["slug"] = p.get("slug") or slugify(body.name)
     p["id"] = str(uuid.uuid4())
@@ -837,7 +918,7 @@ async def create_product(body: ProductIn, user=Depends(current_admin)):
 
 
 @api.put("/admin/products/{pid}")
-async def update_product(pid: str, body: ProductIn, user=Depends(current_admin)):
+async def update_product(pid: str, body: ProductIn, user=Depends(current_staff)):
     upd = body.model_dump()
     upd["slug"] = upd.get("slug") or slugify(body.name)
     upd["updated_at"] = now_iso()
@@ -848,19 +929,19 @@ async def update_product(pid: str, body: ProductIn, user=Depends(current_admin))
 
 
 @api.delete("/admin/products/{pid}")
-async def delete_product(pid: str, user=Depends(current_admin)):
+async def delete_product(pid: str, user=Depends(current_staff)):
     await db.products.delete_one({"id": pid})
     return {"ok": True}
 
 
 @api.get("/admin/products")
-async def admin_products(user=Depends(current_admin)):
+async def admin_products(user=Depends(current_staff)):
     return await db.products.find({}, {"_id": 0}).to_list(1000)
 
 
 # ----------------------------- Admin: Blog CRUD -----------------------------
 @api.post("/admin/blog")
-async def create_blog(body: BlogIn, user=Depends(current_admin)):
+async def create_blog(body: BlogIn, user=Depends(current_staff)):
     p = body.model_dump()
     p["slug"] = p.get("slug") or slugify(body.title)
     p["id"] = str(uuid.uuid4())
@@ -870,7 +951,7 @@ async def create_blog(body: BlogIn, user=Depends(current_admin)):
 
 
 @api.put("/admin/blog/{bid}")
-async def update_blog(bid: str, body: BlogIn, user=Depends(current_admin)):
+async def update_blog(bid: str, body: BlogIn, user=Depends(current_staff)):
     upd = body.model_dump()
     upd["slug"] = upd.get("slug") or slugify(body.title)
     r = await db.blog.update_one({"id": bid}, {"$set": upd})
@@ -880,19 +961,19 @@ async def update_blog(bid: str, body: BlogIn, user=Depends(current_admin)):
 
 
 @api.delete("/admin/blog/{bid}")
-async def delete_blog(bid: str, user=Depends(current_admin)):
+async def delete_blog(bid: str, user=Depends(current_staff)):
     await db.blog.delete_one({"id": bid})
     return {"ok": True}
 
 
 @api.get("/admin/blog")
-async def admin_blog(user=Depends(current_admin)):
+async def admin_blog(user=Depends(current_staff)):
     return await db.blog.find({}, {"_id": 0}).to_list(1000)
 
 
 # ----------------------------- Admin: Banners CRUD -----------------------------
 @api.post("/admin/banners")
-async def create_banner(body: BannerIn, user=Depends(current_admin)):
+async def create_banner(body: BannerIn, user=Depends(current_staff)):
     p = body.model_dump()
     p["id"] = str(uuid.uuid4())
     await db.banners.insert_one(p)
@@ -900,7 +981,7 @@ async def create_banner(body: BannerIn, user=Depends(current_admin)):
 
 
 @api.put("/admin/banners/{bid}")
-async def update_banner(bid: str, body: BannerIn, user=Depends(current_admin)):
+async def update_banner(bid: str, body: BannerIn, user=Depends(current_staff)):
     r = await db.banners.update_one({"id": bid}, {"$set": body.model_dump()})
     if r.matched_count == 0:
         raise HTTPException(404, "Not found")
@@ -908,24 +989,24 @@ async def update_banner(bid: str, body: BannerIn, user=Depends(current_admin)):
 
 
 @api.delete("/admin/banners/{bid}")
-async def delete_banner(bid: str, user=Depends(current_admin)):
+async def delete_banner(bid: str, user=Depends(current_staff)):
     await db.banners.delete_one({"id": bid})
     return {"ok": True}
 
 
 @api.get("/admin/banners")
-async def admin_banners(user=Depends(current_admin)):
+async def admin_banners(user=Depends(current_staff)):
     return await db.banners.find({}, {"_id": 0}).sort("order", 1).to_list(500)
 
 
 # ----------------------------- Admin: Orders -----------------------------
 @api.get("/admin/orders")
-async def admin_orders(user=Depends(current_admin)):
+async def admin_orders(user=Depends(current_staff)):
     return await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
 @api.put("/admin/orders/{oid}/status")
-async def update_order_status(oid: str, body: Dict[str, str], user=Depends(current_admin)):
+async def update_order_status(oid: str, body: Dict[str, str], user=Depends(current_staff)):
     new_status = body.get("status")
     if new_status not in {"pending", "paid", "shipped", "cancelled"}:
         raise HTTPException(400, "Invalid status")
@@ -979,12 +1060,12 @@ async def ensure_invoice_for_order(order: dict) -> Optional[dict]:
 
 
 @api.get("/admin/invoices")
-async def list_invoices(user=Depends(current_admin)):
+async def list_invoices(user=Depends(current_staff)):
     return await db.invoices.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
 @api.get("/admin/invoices/{iid}")
-async def get_invoice(iid: str, user=Depends(current_admin)):
+async def get_invoice(iid: str, user=Depends(current_staff)):
     doc = await db.invoices.find_one({"id": iid}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Facture introuvable")
@@ -992,7 +1073,7 @@ async def get_invoice(iid: str, user=Depends(current_admin)):
 
 
 @api.post("/admin/invoices")
-async def create_invoice(body: InvoiceIn, user=Depends(current_admin)):
+async def create_invoice(body: InvoiceIn, user=Depends(current_staff)):
     invoice = body.model_dump()
     invoice["id"] = str(uuid.uuid4())
     invoice["invoice_no"] = await next_invoice_number()
@@ -1004,7 +1085,7 @@ async def create_invoice(body: InvoiceIn, user=Depends(current_admin)):
 
 
 @api.post("/admin/invoices/from-order/{order_id}")
-async def create_invoice_from_order(order_id: str, user=Depends(current_admin)):
+async def create_invoice_from_order(order_id: str, user=Depends(current_staff)):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Commande introuvable")
@@ -1016,7 +1097,7 @@ async def create_invoice_from_order(order_id: str, user=Depends(current_admin)):
 
 
 @api.put("/admin/invoices/{iid}")
-async def update_invoice(iid: str, body: InvoiceIn, user=Depends(current_admin)):
+async def update_invoice(iid: str, body: InvoiceIn, user=Depends(current_staff)):
     upd = body.model_dump()
     upd["updated_at"] = now_iso()
     r = await db.invoices.update_one({"id": iid}, {"$set": upd})
@@ -1026,18 +1107,18 @@ async def update_invoice(iid: str, body: InvoiceIn, user=Depends(current_admin))
 
 
 @api.delete("/admin/invoices/{iid}")
-async def delete_invoice(iid: str, user=Depends(current_admin)):
+async def delete_invoice(iid: str, user=Depends(current_staff)):
     await db.invoices.delete_one({"id": iid})
     return {"ok": True}
 
 
 @api.get("/admin/promos")
-async def admin_promos(user=Depends(current_admin)):
+async def admin_promos(user=Depends(current_staff)):
     return await db.promos.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 
 @api.post("/admin/promos")
-async def create_promo(body: PromoCodeIn, user=Depends(current_admin)):
+async def create_promo(body: PromoCodeIn, user=Depends(current_staff)):
     code = body.code.strip().upper()
     if not code or body.value <= 0 or body.discount_type not in ("percent", "fixed"):
         raise HTTPException(400, "Code promo invalide")
@@ -1054,7 +1135,7 @@ async def create_promo(body: PromoCodeIn, user=Depends(current_admin)):
 
 
 @api.put("/admin/promos/{promo_id}")
-async def update_promo(promo_id: str, body: PromoCodeIn, user=Depends(current_admin)):
+async def update_promo(promo_id: str, body: PromoCodeIn, user=Depends(current_staff)):
     code = body.code.strip().upper()
     if not code or body.value <= 0 or body.discount_type not in ("percent", "fixed"):
         raise HTTPException(400, "Code promo invalide")
@@ -1070,13 +1151,13 @@ async def update_promo(promo_id: str, body: PromoCodeIn, user=Depends(current_ad
 
 
 @api.delete("/admin/promos/{promo_id}")
-async def delete_promo(promo_id: str, user=Depends(current_admin)):
+async def delete_promo(promo_id: str, user=Depends(current_staff)):
     await db.promos.delete_one({"id": promo_id})
     return {"ok": True}
 
 
 @api.get("/admin/invoices/{iid}/pdf")
-async def invoice_pdf(iid: str, user=Depends(current_admin)):
+async def invoice_pdf(iid: str, user=Depends(current_staff)):
     invoice = await db.invoices.find_one({"id": iid}, {"_id": 0})
     if not invoice:
         raise HTTPException(404, "Facture introuvable")
@@ -1089,7 +1170,7 @@ async def invoice_pdf(iid: str, user=Depends(current_admin)):
 
 
 @api.get("/admin/stats")
-async def admin_stats(user=Depends(current_admin)):
+async def admin_stats(user=Depends(current_staff)):
     total_products = await db.products.count_documents({})
     total_orders = await db.orders.count_documents({})
     total_paid = await db.orders.count_documents({"status": "paid"})
@@ -1724,7 +1805,7 @@ async def _wp_get(path: str, params: dict = None, auth: bool = True):
 
 
 @api.post("/admin/uploads/image")
-async def upload_product_image(file: UploadFile = File(...), user=Depends(current_admin)):
+async def upload_product_image(file: UploadFile = File(...), user=Depends(current_staff)):
     """Uploads an image to the WordPress media library (same host as existing product
     images) and returns its public URL, so it can be added to a product's images list."""
     if not (file.content_type or "").startswith("image/"):
@@ -1748,7 +1829,7 @@ async def upload_product_image(file: UploadFile = File(...), user=Depends(curren
 
 
 @api.post("/admin/sync/woocommerce")
-async def sync_woo(user=Depends(current_admin)):
+async def sync_woo(user=Depends(current_staff)):
     """Idempotent: uses woo_id as unique key, upserts."""
     imported = 0
     page = 1
@@ -1864,7 +1945,7 @@ WC_ORDER_STATUS_MAP = {
 
 
 @api.post("/admin/sync/woocommerce-orders")
-async def sync_woo_orders(user=Depends(current_admin)):
+async def sync_woo_orders(user=Depends(current_staff)):
     """Imports existing WooCommerce orders (placed on the old site) so they show up
     alongside orders placed through this storefront. Idempotent: keyed by woo_order_id."""
     imported = 0
@@ -1921,7 +2002,7 @@ async def sync_woo_orders(user=Depends(current_admin)):
 
 
 @api.post("/admin/sync/wordpress")
-async def sync_wp(user=Depends(current_admin)):
+async def sync_wp(user=Depends(current_staff)):
     imported = 0
     page = 1
     try:
@@ -1957,7 +2038,7 @@ async def sync_wp(user=Depends(current_admin)):
 
 
 @api.post("/admin/sync/media")
-async def sync_media(user=Depends(current_admin)):
+async def sync_media(user=Depends(current_staff)):
     """Fetches media from WP and creates default banners if none exist."""
     try:
         media = await _wp_get("media", {"per_page": 20, "media_type": "image"})
@@ -1987,7 +2068,7 @@ async def sync_media(user=Depends(current_admin)):
 
 
 @api.post("/admin/sync/all")
-async def sync_all(user=Depends(current_admin)):
+async def sync_all(user=Depends(current_staff)):
     woo = await sync_woo(user)
     orders = await sync_woo_orders(user)
     wp = await sync_wp(user)
@@ -2008,7 +2089,7 @@ async def sync_all(user=Depends(current_admin)):
 
 
 @api.post("/admin/migrate/image-domain")
-async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(current_admin)):
+async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(current_staff)):
     """Rewrites stored image URLs that still point at an old domain to the current WORDPRESS_SITE_K host
     (e.g. after moving WooCommerce/WordPress to a new hosting domain)."""
     new_base = WP_BASE
@@ -2054,7 +2135,7 @@ async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(c
 
 
 @api.get("/admin/sync/status")
-async def sync_status(user=Depends(current_admin)):
+async def sync_status(user=Depends(current_staff)):
     doc = await db.settings.find_one({"id": "sync_status"}, {"_id": 0})
     return doc or {"last_sync_at": None, "last_sync_ok": None}
 
