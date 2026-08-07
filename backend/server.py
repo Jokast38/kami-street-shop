@@ -1695,7 +1695,7 @@ async def mollie_webhook(request: Request):
 
 # ----------------------------- Migration (WooCommerce + WP) -----------------------------
 async def _woo_get(path: str, params: dict = None):
-    url = f"https://{WP_SITE}/wp-json/wc/v3/{path}"
+    url = f"{WP_BASE}/wp-json/wc/v3/{path}"
     async with httpx.AsyncClient(timeout=60, auth=(WOO_KEY, WOO_SECRET), follow_redirects=True) as c:
         r = await c.get(url, params=params or {})
         r.raise_for_status()
@@ -2005,6 +2005,52 @@ async def sync_all(user=Depends(current_admin)):
         upsert=True,
     )
     return {"woocommerce": woo, "orders": orders, "wordpress": wp, "media": media}
+
+
+@api.post("/admin/migrate/image-domain")
+async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(current_admin)):
+    """Rewrites stored image URLs that still point at an old domain to the current WORDPRESS_SITE_K host
+    (e.g. after moving WooCommerce/WordPress to a new hosting domain)."""
+    new_base = WP_BASE
+    domain = old_domain.strip().rstrip("/")
+    for prefix in ("https://", "http://"):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix):]
+            break
+    old_pattern = re.compile(r"https?://" + re.escape(domain))
+
+    updated = {"products": 0, "categories": 0, "brands": 0}
+
+    async for p in db.products.find({}, {"_id": 0}):
+        changed = False
+        images = p.get("images") or []
+        new_images = [old_pattern.sub(new_base, url) for url in images]
+        if new_images != images:
+            changed = True
+        variations = p.get("variations") or []
+        new_variations = []
+        for v in variations:
+            if v.get("image"):
+                new_img = old_pattern.sub(new_base, v["image"])
+                if new_img != v["image"]:
+                    changed = True
+                v = {**v, "image": new_img}
+            new_variations.append(v)
+        if changed:
+            await db.products.update_one({"id": p["id"]}, {"$set": {"images": new_images, "variations": new_variations}})
+            updated["products"] += 1
+
+    for coll_name in ("categories", "brands"):
+        coll = getattr(db, coll_name)
+        async for doc in coll.find({}, {"_id": 0}):
+            image = doc.get("image")
+            if image:
+                new_image = old_pattern.sub(new_base, image)
+                if new_image != image:
+                    await coll.update_one({"id": doc["id"]}, {"$set": {"image": new_image}})
+                    updated[coll_name] += 1
+
+    return {"ok": True, "new_base": new_base, "updated": updated}
 
 
 @api.get("/admin/sync/status")
