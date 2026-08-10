@@ -33,7 +33,7 @@ const ORGANIZATION_JSON_LD = {
     "https://www.tiktok.com/@kami_street_",
     "https://www.instagram.com/kami_street_/?hl=fr",
     "https://www.linkedin.com/in/kami-street-7450833a2/",
-    "https://www.snapchat.com/@vn.kb",
+    "https://www.snapchat.com/@kamistreet93",
     "https://www.facebook.com/profile.php?id=61584631330642&locale=fr_FR",
     "https://www.youtube.com/channel/UChTepM7oFRNng5Cb9O-_ScQ",
   ],

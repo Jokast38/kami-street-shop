@@ -4,10 +4,15 @@ import logging
 import re
 import html
 import smtplib
+import imaplib
 import ssl
+from email import message_from_bytes
+from email.header import decode_header, make_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
+from email.utils import parsedate_to_datetime, parseaddr
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -56,6 +61,8 @@ SMTP_PORT = int(os.environ.get("HOSTINGER_MAIL_PORT", "465"))
 SMTP_USER = os.environ.get("HOSTINGER_MAIL_USER", "")
 SMTP_PASSWORD = os.environ.get("HOSTINGER_EMAIL_PASSWORD", "")
 SMTP_SENDER_NAME = os.environ.get("HOSTINGER_SENDER_NAME", "Kami Street")
+IMAP_HOST = os.environ.get("HOSTINGER_IMAP_HOST", "imap.hostinger.com")
+IMAP_PORT = int(os.environ.get("HOSTINGER_IMAP_PORT", "993"))
 
 WOO_KEY = os.environ["WOOCOMMERCE_KEY_K"]
 WOO_SECRET = os.environ["WOOCOMMERCE_SECRET_K"]
@@ -322,29 +329,68 @@ class InvoiceIn(BaseModel):
 
 
 # ----------------------------- Email (Hostinger SMTP, Brevo fallback) -----------------------------
+EMAIL_ASSETS_DIR = Path(__file__).parent / "assets"
+EMAIL_LOGO_PATH = EMAIL_ASSETS_DIR / "kami-street-black.png"
+EMAIL_LOGO_CID = "kami-logo"
+
+
 def _send_smtp_sync(to_email: str, to_name: str, subject: str, html_body: str, attachment: Optional[Dict[str, Any]] = None):
-    msg = MIMEMultipart()
+    msg = MIMEMultipart("mixed")
     msg["From"] = f"{SMTP_SENDER_NAME} <{SMTP_USER}>"
     msg["To"] = f"{to_name} <{to_email}>" if to_name else to_email
     msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
+
+    related = MIMEMultipart("related")
+    related.attach(MIMEText(html_body, "html"))
+    if EMAIL_LOGO_PATH.exists() and f"cid:{EMAIL_LOGO_CID}" in html_body:
+        with open(EMAIL_LOGO_PATH, "rb") as f:
+            logo = MIMEImage(f.read())
+        logo.add_header("Content-ID", f"<{EMAIL_LOGO_CID}>")
+        logo.add_header("Content-Disposition", "inline", filename="logo-kami-street.png")
+        related.attach(logo)
+    msg.attach(related)
+
     if attachment:
         part = MIMEApplication(attachment["content"], Name=attachment["filename"])
         part["Content-Disposition"] = f'attachment; filename="{attachment["filename"]}"'
         msg.attach(part)
+
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=20) as server:
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(SMTP_USER, [to_email], msg.as_string())
 
 
-async def send_email(to_email: str, to_name: str, subject: str, html: str, attachment: Optional[Dict[str, Any]] = None):
+async def _log_email(direction: str, to_email: str, to_name: str, subject: str, html_body: str, status: str, category: str = "other", error: str = ""):
+    try:
+        await db.emails.insert_one({
+            "id": str(uuid.uuid4()),
+            "direction": direction,  # "sent" | "received"
+            "category": category,
+            "from_email": SMTP_USER or BREVO_SENDER_EMAIL,
+            "from_name": SMTP_SENDER_NAME,
+            "to_email": to_email,
+            "to_name": to_name,
+            "subject": subject,
+            "html": html_body,
+            "status": status,  # "delivered" | "failed"
+            "error": error[:500] if error else "",
+            "read": True,
+            "created_at": now_iso(),
+        })
+    except Exception as e:
+        logging.error(f"Email log error: {e}")
+
+
+async def send_email(to_email: str, to_name: str, subject: str, html: str, attachment: Optional[Dict[str, Any]] = None, category: str = "other"):
     if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
         try:
             await asyncio.to_thread(_send_smtp_sync, to_email, to_name, subject, html, attachment)
+            await _log_email("sent", to_email, to_name, subject, html, "delivered", category)
             return 200, "ok"
         except Exception as e:
             logging.error(f"Hostinger SMTP error: {e}")
+            await _log_email("sent", to_email, to_name, subject, html, "failed", category, str(e))
             return 500, str(e)
 
     # Fallback: Brevo (no attachment support here)
@@ -362,10 +408,59 @@ async def send_email(to_email: str, to_name: str, subject: str, html: str, attac
     try:
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
+            ok = r.status_code < 400
+            await _log_email("sent", to_email, to_name, subject, html, "delivered" if ok else "failed", category, "" if ok else r.text[:500])
             return r.status_code, r.text
     except Exception as e:
         logging.error(f"Brevo error: {e}")
+        await _log_email("sent", to_email, to_name, subject, html, "failed", category, str(e))
         return 500, str(e)
+
+
+COMPANY_LEGAL = {
+    "name": "Kami Street",
+    "legal_form": "Société par actions simplifiée",
+    "address": "59 Avenue Joffre, 93800 Épinay-sur-Seine, France",
+    "phone": "+33 1 80 90 72 51",
+    "email": "info@kamistreet.fr",
+    "siren": "104 079 264",
+    "siret": "104 079 264 00016",
+    "vat": "FR42 104079264",
+    "site": "kamistreet.fr",
+}
+
+
+def email_legal_footer_html() -> str:
+    c = COMPANY_LEGAL
+    return f"""
+    <div style="margin-top:28px;padding-top:16px;border-top:1px solid #E4E4E7;font-size:11px;line-height:1.6;color:#6B6B70">
+      <p style="margin:0 0 4px">
+        <strong style="color:#0E0E10">{c['name']}</strong> · {c['legal_form']}<br>
+        {c['address']}<br>
+        Tél : {c['phone']} · Email : {c['email']} · {c['site']}
+      </p>
+      <p style="margin:8px 0 0">
+        SIREN {c['siren']} · SIRET {c['siret']} · TVA intracommunautaire {c['vat']}
+      </p>
+      <p style="margin:8px 0 0">
+        Cet email vous est adressé dans le cadre de votre relation commerciale avec {c['name']}.
+        <a href="https://{c['site']}/mentions-legales" style="color:#6B6B70">Mentions légales</a>
+      </p>
+    </div>
+    """
+
+
+def email_template(title: str, body_html: str) -> str:
+    """Branded wrapper (logo header + legal footer) used for every outbound email.
+    Colors match the site's light-theme CSS tokens (--background/--foreground/--accent in index.css)."""
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#FAFAFA;color:#0E0E10;padding:24px">
+      <img src="cid:{EMAIL_LOGO_CID}" alt="Kami Street" height="36" style="height:36px;width:auto;display:block;margin:0 0 16px">
+      {f'<h2 style="margin:0 0 12px">{title}</h2>' if title else ''}
+      {body_html}
+      {email_legal_footer_html()}
+    </div>
+    """
 
 
 def order_email_html(order: dict, admin: bool = False) -> str:
@@ -380,20 +475,16 @@ def order_email_html(order: dict, admin: bool = False) -> str:
         if admin
         else f"Merci pour votre commande #{order['order_no']} chez Kami Street !"
     )
-    return f"""
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#09090B;color:#FAFAFA;padding:24px">
-      <h1 style="color:#E2FF31;letter-spacing:2px">KAMI STREET</h1>
-      <h2>{title}</h2>
+    body = f"""
       <p>{intro}</p>
-      <table style="width:100%;border-collapse:collapse;background:#18181B;margin:16px 0">
+      <table style="width:100%;border-collapse:collapse;background:#F4F4F5;margin:16px 0">
         {items_html}
         <tr><td style="padding:8px;font-weight:bold">TOTAL</td>
-        <td style="padding:8px;text-align:right;color:#E2FF31;font-weight:bold">{order['total']:.2f} €</td></tr>
+        <td style="padding:8px;text-align:right;background:#0E0E10;color:#DAFF33;font-weight:bold">{order['total']:.2f} €</td></tr>
       </table>
       <p><strong>Adresse de livraison :</strong><br>{order['customer_name']}<br>{order['shipping_address'].get('line1','')}<br>{order['shipping_address'].get('postal_code','')} {order['shipping_address'].get('city','')}<br>{order['shipping_address'].get('country','')}</p>
-      <p style="opacity:.7;font-size:12px">Kami Street · kamistreet.fr</p>
-    </div>
     """
+    return email_template(title, body)
 
 
 async def _auto_sync_loop():
@@ -405,6 +496,10 @@ async def _auto_sync_loop():
             woo = await sync_woo(None)
             orders = await sync_woo_orders(None)
             wp = await sync_wp(None)
+            try:
+                await sync_inbox_emails()
+            except Exception as mail_e:
+                logging.error(f"Inbox auto-sync failed: {mail_e}")
             await db.settings.update_one(
                 {"id": "sync_status"},
                 {"$set": {
@@ -1213,22 +1308,200 @@ async def send_invoice_email(iid: str, user=Depends(current_staff)):
     if not invoice.get("customer_email"):
         raise HTTPException(400, "Cette facture n'a pas d'email client")
     pdf_bytes = generate_invoice_pdf(invoice)
-    html_body = f"""
-    <div style="font-family:Helvetica,Arial,sans-serif;max-width:520px;margin:auto">
+    body = f"""
       <p>Bonjour {html.escape(invoice.get('customer_name', ''))},</p>
       <p>Veuillez trouver ci-joint votre facture <b>{invoice['invoice_no']}</b>{f" pour la commande {invoice.get('order_no')}" if invoice.get('order_no') else ''}.</p>
-      <p style="opacity:.7;font-size:12px">Kami Street · kamistreet.fr</p>
-    </div>
     """
+    html_body = email_template("Votre facture", body)
     status_code, detail = await send_email(
         invoice["customer_email"],
         invoice.get("customer_name", ""),
         f"Votre facture {invoice['invoice_no']} — Kami Street",
         html_body,
         attachment={"filename": f"{invoice['invoice_no']}.pdf", "content": pdf_bytes},
+        category="invoice",
     )
     if status_code >= 400:
         raise HTTPException(502, f"Échec de l'envoi de l'email: {detail[:200]}")
+    return {"ok": True}
+
+
+# ----------------------------- Mailbox (Hostinger IMAP, admin webmail) -----------------------------
+def _decode_mime_header(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
+
+
+def _extract_email_body(msg) -> tuple[str, str]:
+    """Returns (text_body, html_body)."""
+    text_body, html_body = "", ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            disposition = str(part.get("Content-Disposition") or "")
+            if "attachment" in disposition:
+                continue
+            try:
+                payload = part.get_payload(decode=True)
+                if payload is None:
+                    continue
+                charset = part.get_content_charset() or "utf-8"
+                content = payload.decode(charset, errors="replace")
+            except Exception:
+                continue
+            if content_type == "text/plain" and not text_body:
+                text_body = content
+            elif content_type == "text/html" and not html_body:
+                html_body = content
+    else:
+        try:
+            payload = msg.get_payload(decode=True)
+            charset = msg.get_content_charset() or "utf-8"
+            content = payload.decode(charset, errors="replace") if payload else ""
+        except Exception:
+            content = ""
+        if msg.get_content_type() == "text/html":
+            html_body = content
+        else:
+            text_body = content
+    return text_body, html_body
+
+
+def _fetch_imap_sync(limit: int = 50) -> List[Dict[str, Any]]:
+    if not (IMAP_HOST and SMTP_USER and SMTP_PASSWORD):
+        return []
+    results = []
+    with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=20) as M:
+        M.login(SMTP_USER, SMTP_PASSWORD)
+        M.select("INBOX", readonly=True)
+        typ, data = M.search(None, "ALL")
+        if typ != "OK":
+            return []
+        ids = data[0].split()[-limit:]
+        for msg_id in reversed(ids):
+            typ, msg_data = M.fetch(msg_id, "(RFC822)")
+            if typ != "OK" or not msg_data or not msg_data[0]:
+                continue
+            raw = msg_data[0][1]
+            msg = message_from_bytes(raw)
+            message_id = (msg.get("Message-ID") or "").strip()
+            from_name, from_email = parseaddr(_decode_mime_header(msg.get("From")))
+            to_name, to_email = parseaddr(_decode_mime_header(msg.get("To")))
+            subject = _decode_mime_header(msg.get("Subject"))
+            try:
+                created_at = parsedate_to_datetime(msg.get("Date")).isoformat()
+            except Exception:
+                created_at = now_iso()
+            text_body, html_body = _extract_email_body(msg)
+            results.append({
+                "message_id": message_id or f"imap-{msg_id.decode()}",
+                "direction": "received",
+                "category": "inbox",
+                "from_email": from_email,
+                "from_name": from_name,
+                "to_email": to_email,
+                "to_name": to_name,
+                "subject": subject,
+                "html": html_body,
+                "text": text_body,
+                "status": "delivered",
+                "error": "",
+                "created_at": created_at,
+            })
+    return results
+
+
+async def sync_inbox_emails() -> int:
+    # Skip staff notifications on the very first sync, otherwise every pre-existing message
+    # in the mailbox would trigger a notification flood.
+    init_flag = await db.settings.find_one({"id": "mailbox_initial_sync_done"})
+    is_first_sync = init_flag is None
+
+    fetched = await asyncio.to_thread(_fetch_imap_sync, 100)
+    inserted = 0
+    new_items = []
+    for item in fetched:
+        existing = await db.emails.find_one({"message_id": item["message_id"]}, {"_id": 0, "id": 1})
+        if existing:
+            continue
+        await db.emails.insert_one({"id": str(uuid.uuid4()), "read": False, **item})
+        inserted += 1
+        new_items.append(item)
+
+    if is_first_sync:
+        await db.settings.update_one({"id": "mailbox_initial_sync_done"}, {"$set": {"id": "mailbox_initial_sync_done", "at": now_iso()}}, upsert=True)
+    elif new_items:
+        staff = await db.users.find({"role": {"$in": ["admin", "employee"]}}, {"_id": 0, "email": 1}).to_list(200)
+        recipients = {s["email"] for s in staff if s.get("email")} or {ADMIN_EMAIL}
+        for item in new_items:
+            body = f"""
+              <p>Un nouvel email a été reçu sur <b>{SMTP_USER or 'contact@kamistreet.fr'}</b> :</p>
+              <p><b>De :</b> {html.escape(item.get('from_name') or item.get('from_email') or '')} ({html.escape(item.get('from_email') or '')})<br>
+              <b>Sujet :</b> {html.escape(item.get('subject') or '(sans objet)')}</p>
+              <p>Consultez-le dans l'onglet Messagerie du dashboard admin.</p>
+            """
+            html_body = email_template("Nouveau message reçu", body)
+            for staff_email in recipients:
+                await send_email(staff_email, "Kami Street", f"Nouveau message: {item.get('subject') or '(sans objet)'}", html_body, category="mailbox_notification")
+
+    return inserted
+
+
+@api.get("/admin/emails")
+async def list_emails(direction: Optional[str] = None, search: Optional[str] = None, user=Depends(current_staff)):
+    q: Dict[str, Any] = {}
+    if direction:
+        q["direction"] = direction
+    if search:
+        q["$or"] = [
+            {"subject": {"$regex": re.escape(search), "$options": "i"}},
+            {"from_email": {"$regex": re.escape(search), "$options": "i"}},
+            {"to_email": {"$regex": re.escape(search), "$options": "i"}},
+        ]
+    docs = await db.emails.find(q, {"_id": 0, "html": 0, "text": 0}).sort("created_at", -1).to_list(500)
+    return docs
+
+
+@api.post("/admin/emails/sync")
+async def sync_emails(user=Depends(current_staff)):
+    inserted = await sync_inbox_emails()
+    return {"ok": True, "new_messages": inserted}
+
+
+@api.get("/admin/emails/{eid}")
+async def get_email(eid: str, user=Depends(current_staff)):
+    doc = await db.emails.find_one({"id": eid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Email introuvable")
+    if not doc.get("read"):
+        await db.emails.update_one({"id": eid}, {"$set": {"read": True}})
+        doc["read"] = True
+    return doc
+
+
+@api.delete("/admin/emails/{eid}")
+async def delete_email(eid: str, user=Depends(current_staff)):
+    await db.emails.delete_one({"id": eid})
+    return {"ok": True}
+
+
+class ComposeEmailIn(BaseModel):
+    to_email: EmailStr
+    to_name: str = ""
+    subject: str
+    body: str
+
+
+@api.post("/admin/emails/send")
+async def compose_email(body: ComposeEmailIn, user=Depends(current_staff)):
+    html_body = email_template(body.subject, f"<div>{body.body}</div>")
+    status_code, detail = await send_email(body.to_email, body.to_name, body.subject, html_body, category="compose")
+    if status_code >= 400:
+        raise HTTPException(502, f"Échec de l'envoi: {detail[:200]}")
     return {"ok": True}
 
 
@@ -1364,14 +1637,27 @@ async def create_checkout_session(body: CheckoutIn):
     return {"checkout_url": session.url, "session_id": session.id, "order_no": order_no}
 
 
+async def _notify_staff_new_order(order: dict):
+    """Notifies every collaborator (admin + employee) that a purchase order (bon de commande) came in."""
+    staff = await db.users.find({"role": {"$in": ["admin", "employee"]}}, {"_id": 0, "email": 1}).to_list(200)
+    recipients = {s["email"] for s in staff if s.get("email")} or {ADMIN_EMAIL}
+    for staff_email in recipients:
+        await send_email(
+            staff_email, "Kami Street",
+            f"Nouveau bon de commande #{order['order_no']}",
+            order_email_html(order, admin=True),
+            category="order_notification",
+        )
+
+
 async def _mark_order_paid(session_id_field: str, session_id_value: str):
     await db.orders.update_one(
         {session_id_field: session_id_value, "payment_status": {"$ne": "paid"}},
         {"$set": {"payment_status": "paid", "status": "paid", "updated_at": now_iso()}},
     )
     order = await db.orders.find_one({session_id_field: session_id_value}, {"_id": 0})
-    await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order))
-    await send_email(ADMIN_EMAIL, "Admin Kami Street", f"Nouvelle commande #{order['order_no']}", order_email_html(order, admin=True))
+    await send_email(order["customer_email"], order["customer_name"], f"Confirmation commande #{order['order_no']}", order_email_html(order), category="order_confirmation")
+    await _notify_staff_new_order(order)
     await ensure_invoice_for_order(order)
     return order
 

@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users, Send } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users, Send, Mail, Inbox, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
@@ -97,6 +97,7 @@ export default function AdminDashboard() {
             {isAdmin && <TabsTrigger value="payments" data-testid="tab-payments" className="shrink-0">Paiement</TabsTrigger>}
             <TabsTrigger value="invoices" data-testid="tab-invoices" className="shrink-0">Factures</TabsTrigger>
             <TabsTrigger value="promos" data-testid="tab-promos" className="shrink-0">Codes promo</TabsTrigger>
+            <TabsTrigger value="mailbox" data-testid="tab-mailbox" className="shrink-0">Messagerie</TabsTrigger>
             {isAdmin && <TabsTrigger value="collaborators" data-testid="tab-collaborators" className="shrink-0">Collaborateurs</TabsTrigger>}
           </TabsList>
 
@@ -122,6 +123,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="promos" className="mt-6">
             <PromosPanel items={promos} authAxios={authAxios} reload={loadAll} />
+          </TabsContent>
+          <TabsContent value="mailbox" className="mt-6">
+            <MailboxPanel authAxios={authAxios} />
           </TabsContent>
           {isAdmin && (
             <TabsContent value="collaborators" className="mt-6">
@@ -945,6 +949,174 @@ function CollaboratorsPanel({ authAxios, currentEmail }) {
               </Select>
             </div>
             <Button onClick={create} className="cta-primary rounded-none w-full">Créer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function MailboxPanel({ authAxios }) {
+  const [tab, setTab] = useState("received"); // received | sent
+  const [items, setItems] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [selectedFull, setSelectedFull] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const emptyCompose = { to_email: "", to_name: "", subject: "", body: "" };
+  const [compose, setCompose] = useState(emptyCompose);
+
+  const load = useCallback(() => {
+    authAxios.get("/admin/emails", { params: { direction: tab, search: search || undefined } })
+      .then(r => setItems(r.data))
+      .catch(() => {});
+  }, [authAxios, tab, search]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSelected(null); setSelectedFull(null); }, [tab]);
+
+  const openEmail = async (item) => {
+    setSelected(item);
+    try {
+      const { data } = await authAxios.get(`/admin/emails/${item.id}`);
+      setSelectedFull(data);
+      if (!item.read) setItems(prev => prev.map(i => i.id === item.id ? { ...i, read: true } : i));
+    } catch { toast.error("Erreur lors du chargement de l'email"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("Supprimer cet email ?")) return;
+    await authAxios.delete(`/admin/emails/${id}`);
+    toast.success("Supprimé");
+    setSelected(null); setSelectedFull(null);
+    load();
+  };
+
+  const syncInbox = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await authAxios.post("/admin/emails/sync");
+      toast.success(`${data.new_messages} nouveau(x) message(s)`);
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur de synchronisation"); }
+    finally { setSyncing(false); }
+  };
+
+  const send = async () => {
+    setSending(true);
+    try {
+      await authAxios.post("/admin/emails/send", compose);
+      toast.success("Email envoyé");
+      setComposeOpen(false); setCompose(emptyCompose);
+      if (tab === "sent") load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur d'envoi"); }
+    finally { setSending(false); }
+  };
+
+  const replyTo = (item) => {
+    setCompose({
+      to_email: tab === "received" ? item.from_email : item.to_email,
+      to_name: tab === "received" ? (item.from_name || "") : (item.to_name || ""),
+      subject: item.subject?.startsWith("Re:") ? item.subject : `Re: ${item.subject || ""}`,
+      body: "",
+    });
+    setComposeOpen(true);
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        <h2 className="display text-xl font-bold flex items-center gap-2"><Mail className="w-5 h-5" />Messagerie</h2>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Input placeholder="Rechercher..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && load()} className="rounded-none h-9 w-48" />
+          <Button variant="outline" className="rounded-none" onClick={syncInbox} disabled={syncing} data-testid="mailbox-sync-btn">
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />Actualiser
+          </Button>
+          <Button className="cta-primary rounded-none" onClick={() => { setCompose(emptyCompose); setComposeOpen(true); }} data-testid="mailbox-compose-btn">
+            <Plus className="w-4 h-4 mr-2" />Nouveau message
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <Button size="sm" variant={tab === "received" ? "default" : "outline"} className={`rounded-none ${tab === "received" ? "cta-primary" : ""}`} onClick={() => setTab("received")} data-testid="mailbox-tab-received">
+          <Inbox className="w-4 h-4 mr-2" />Reçus
+        </Button>
+        <Button size="sm" variant={tab === "sent" ? "default" : "outline"} className={`rounded-none ${tab === "sent" ? "cta-primary" : ""}`} onClick={() => setTab("sent")} data-testid="mailbox-tab-sent">
+          <Send className="w-4 h-4 mr-2" />Envoyés
+        </Button>
+      </div>
+
+      <div className="grid md:grid-cols-[340px_1fr] gap-4 border border-border" style={{ minHeight: "480px" }}>
+        <div className="border-r border-border overflow-y-auto max-h-[600px]">
+          {items.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">Aucun email</div>
+          ) : items.map(item => (
+            <button
+              key={item.id}
+              onClick={() => openEmail(item)}
+              data-testid={`mailbox-item-${item.id}`}
+              className={`w-full text-left p-3 border-b border-border transition-colors ${selected?.id === item.id ? "bg-accent/10" : "hover:bg-secondary"} ${!item.read ? "font-semibold" : ""}`}
+            >
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-sm truncate flex items-center gap-1.5">
+                  {tab === "received" ? <ArrowDownLeft className="w-3 h-3 shrink-0 text-muted-foreground" /> : <ArrowUpRight className="w-3 h-3 shrink-0 text-muted-foreground" />}
+                  {tab === "received" ? (item.from_name || item.from_email) : (item.to_name || item.to_email)}
+                </span>
+                <span className="text-[10px] text-muted-foreground shrink-0">{item.created_at ? new Date(item.created_at).toLocaleDateString("fr-FR") : ""}</span>
+              </div>
+              <div className="text-xs truncate mt-0.5">{item.subject || "(sans objet)"}</div>
+              {item.status === "failed" && <span className="text-[10px] text-red-500">Échec d'envoi</span>}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 overflow-y-auto max-h-[600px]">
+          {!selectedFull ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Sélectionnez un email</div>
+          ) : (
+            <div>
+              <div className="flex justify-between items-start mb-4 gap-3">
+                <div>
+                  <h3 className="font-bold text-lg">{selectedFull.subject || "(sans objet)"}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {tab === "received" ? "De" : "À"} : {tab === "received" ? (selectedFull.from_name || selectedFull.from_email) : (selectedFull.to_name || selectedFull.to_email)}
+                    {" "}({tab === "received" ? selectedFull.from_email : selectedFull.to_email})
+                  </p>
+                  <p className="text-xs text-muted-foreground">{selectedFull.created_at ? new Date(selectedFull.created_at).toLocaleString("fr-FR") : ""}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="icon" variant="ghost" onClick={() => replyTo(selectedFull)} title="Répondre"><Send className="w-4 h-4" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => del(selectedFull.id)} title="Supprimer"><Trash2 className="w-4 h-4" /></Button>
+                </div>
+              </div>
+              <div className="border-t border-border pt-4">
+                {selectedFull.html ? (
+                  <iframe title="email-body" srcDoc={selectedFull.html} className="w-full border-0" style={{ minHeight: "400px" }} sandbox="" />
+                ) : (
+                  <pre className="whitespace-pre-wrap text-sm">{selectedFull.text || "(vide)"}</pre>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nouveau message</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Destinataire (email)</Label><Input type="email" value={compose.to_email} onChange={e => setCompose({ ...compose, to_email: e.target.value })} /></div>
+              <div><Label>Nom (optionnel)</Label><Input value={compose.to_name} onChange={e => setCompose({ ...compose, to_name: e.target.value })} /></div>
+            </div>
+            <div><Label>Sujet</Label><Input value={compose.subject} onChange={e => setCompose({ ...compose, subject: e.target.value })} /></div>
+            <div><Label>Message</Label><Textarea rows={8} value={compose.body} onChange={e => setCompose({ ...compose, body: e.target.value })} /></div>
+            <Button onClick={send} disabled={sending || !compose.to_email || !compose.subject} className="cta-primary rounded-none w-full">
+              {sending ? "Envoi..." : "Envoyer"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
