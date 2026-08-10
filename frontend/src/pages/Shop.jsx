@@ -74,7 +74,10 @@ export default function Shop() {
             <div className="text-sm uppercase tracking-widest font-bold mb-3">Catégories</div>
             <div className="flex flex-wrap gap-2">
               <Badge onClick={() => setCategory(null)} className={`cursor-pointer rounded-none ${!category ? "bg-accent text-black" : "bg-secondary text-foreground"}`}>Tout</Badge>
-              {categories.map(c => (
+              {categories
+                .filter(c => SHOP_CATEGORY_ORDER.includes(c.slug))
+                .sort((a, b) => SHOP_CATEGORY_ORDER.indexOf(a.slug) - SHOP_CATEGORY_ORDER.indexOf(b.slug))
+                .map(c => (
                 <Badge key={c.id} data-testid={`filter-cat-${c.slug}`} onClick={() => setCategory(c.slug)} className={`cursor-pointer rounded-none ${category === c.slug ? "bg-accent text-black" : "bg-secondary text-foreground"}`}>
                   {c.name}
                 </Badge>
@@ -103,13 +106,41 @@ export default function Shop() {
             <div className="p-16 border border-dashed text-center text-muted-foreground">
               Aucun produit. Synchronisez WooCommerce depuis le dashboard admin.
             </div>
-          ) : (
+          ) : category ? (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6" data-testid="product-grid">
               {products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
+            </div>
+          ) : (
+            <div className="space-y-12" data-testid="product-grid">
+              {groupProductsByCategory(products, categories).map(group => (
+                <div key={group.slug}>
+                  <h2 className="display text-xl font-bold uppercase tracking-widest mb-4 pb-2 border-b border-border">
+                    {group.name}
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                    {group.products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+const SHOP_CATEGORY_ORDER = ["fatbike", "trottinettes-electriques", "accessoires"];
+
+function groupProductsByCategory(products, categories) {
+  const bySlug = Object.fromEntries(categories.map(c => [c.slug, c]));
+  return SHOP_CATEGORY_ORDER
+    .map(slug => bySlug[slug])
+    .filter(Boolean)
+    .map(c => ({
+      slug: c.slug,
+      name: c.name,
+      products: products.filter(p => (p.categories || []).includes(c.slug)),
+    }))
+    .filter(g => g.products.length > 0);
 }
