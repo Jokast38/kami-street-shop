@@ -10,7 +10,7 @@ const SOCIAL_LINKS = [
   { name: "TikTok", icon: FaTiktok, url: "https://www.tiktok.com/@kami_street_" },
   { name: "Instagram", icon: FaInstagram, url: "https://www.instagram.com/kami_street_/?hl=fr" },
   { name: "LinkedIn", icon: FaLinkedin, url: "https://www.linkedin.com/in/kami-street-7450833a2/" },
-  { name: "Snapchat", icon: FaSnapchatGhost, url: "https://www.snapchat.com/@vn.kb" },
+  { name: "Snapchat", icon: FaSnapchatGhost, url: "https://www.snapchat.com/@kamistreet93" },
   { name: "Facebook", icon: FaFacebook, url: "https://www.facebook.com/profile.php?id=61584631330642&locale=fr_FR" },
   { name: "YouTube", icon: FaYoutube, url: "https://www.youtube.com/channel/UChTepM7oFRNng5Cb9O-_ScQ" },
 ];
