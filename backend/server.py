@@ -609,6 +609,27 @@ async def create_collaborator(body: CollaboratorIn, user=Depends(current_admin))
         "created_at": now_iso(),
     }
     await db.users.insert_one(doc)
+
+    role_label = "administrateur" if body.role == "admin" else "employé"
+    login_url = f"{FRONTEND_URL.rstrip('/')}/admin/login"
+    body_html = f"""
+      <p>Bonjour,</p>
+      <p>Un compte {role_label} vient d'être créé pour vous sur le dashboard Kami Street.</p>
+      <table style="width:100%;border-collapse:collapse;background:#F4F4F5;margin:16px 0">
+        <tr><td style="padding:8px;font-weight:bold">Email</td><td style="padding:8px">{html.escape(body.email)}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold">Mot de passe</td><td style="padding:8px">{html.escape(body.password)}</td></tr>
+        <tr><td style="padding:8px;font-weight:bold">Rôle</td><td style="padding:8px">{role_label.capitalize()}</td></tr>
+      </table>
+      <p style="text-align:center;margin:24px 0">
+        <a href="{login_url}" style="display:inline-block;background:#0E0E10;color:#DAFF33;font-weight:bold;text-decoration:none;padding:12px 28px;border-radius:4px">
+          Se connecter au dashboard
+        </a>
+      </p>
+      <p style="font-size:12px;color:#6B6B70">Nous vous recommandons de changer ce mot de passe après votre première connexion.</p>
+    """
+    html_body = email_template("Bienvenue sur le dashboard Kami Street", body_html)
+    await send_email(body.email, "", "Vos accès au dashboard Kami Street", html_body, category="collaborator_welcome")
+
     return {"id": doc["id"], "email": doc["email"], "role": doc["role"], "created_at": doc["created_at"]}
 
 
