@@ -312,6 +312,7 @@ class PaymentSettingsIn(BaseModel):
 
 
 class InvoiceItemIn(BaseModel):
+    ref: str = ""
     name: str
     quantity: int = 1
     unit_price: float = 0.0
@@ -326,6 +327,8 @@ class InvoiceIn(BaseModel):
     items: List[InvoiceItemIn] = Field(default_factory=list)
     tax_rate: float = 20.0
     notes: str = ""
+    payment_method: str = ""
+    amount_paid: Optional[float] = None
 
 
 # ----------------------------- Email (Hostinger SMTP, Brevo fallback) -----------------------------
@@ -422,7 +425,7 @@ COMPANY_LEGAL = {
     "legal_form": "Société par actions simplifiée",
     "address": "59 Avenue Joffre, 93800 Épinay-sur-Seine, France",
     "phone": "+33 1 80 90 72 51",
-    "email": "info@kamistreet.fr",
+    "email": "contact@kamistreet.fr",
     "siren": "104 079 264",
     "siret": "104 079 264 00016",
     "vat": "FR42 104079264",
@@ -1163,6 +1166,15 @@ async def next_invoice_number() -> str:
     return f"FAC-{year}-{doc['value']:04d}"
 
 
+PAYMENT_METHOD_LABELS = {
+    "stripe": "Carte bancaire",
+    "mollie": "Carte bancaire",
+    "alma": "Paiement en plusieurs fois (Alma)",
+    "qonto": "Virement bancaire",
+    "woocommerce": "Carte bancaire",
+}
+
+
 async def ensure_invoice_for_order(order: dict) -> Optional[dict]:
     """Auto-creates an invoice the first time an order becomes paid. No-op if one already exists."""
     existing = await db.invoices.find_one({"order_id": order["id"]}, {"_id": 0})
@@ -1177,11 +1189,13 @@ async def ensure_invoice_for_order(order: dict) -> Optional[dict]:
         "customer_email": order.get("customer_email", ""),
         "billing_address": order.get("shipping_address", {}),
         "items": [
-            {"name": i.get("name", ""), "quantity": i.get("quantity", 1), "unit_price": i.get("price", 0)}
+            {"ref": "", "name": i.get("name", ""), "quantity": i.get("quantity", 1), "unit_price": i.get("price", 0)}
             for i in order.get("items", [])
         ],
         "tax_rate": 20.0,
         "notes": "",
+        "payment_method": PAYMENT_METHOD_LABELS.get(order.get("provider", ""), ""),
+        "amount_paid": order.get("total", 0),
         "status": "issued",
         "created_at": now_iso(),
         "updated_at": now_iso(),

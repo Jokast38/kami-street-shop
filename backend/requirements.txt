@@ -62,6 +62,7 @@ multidict==6.7.1
 mypy==2.3.0
 mypy_extensions==1.1.0
 numpy==2.4.6
+num2words==0.5.14
 oauthlib==3.3.1
 openai==1.99.9
 packaging==26.2

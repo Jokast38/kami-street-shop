@@ -8,7 +8,7 @@ export default function LegalNotice() {
       <h1 className="display text-4xl font-black mb-8">Mentions légales</h1>
       <section className="space-y-4 text-muted-foreground">
         <h2 className="display text-2xl font-bold text-foreground">Éditeur du site</h2>
-        <p>Kami Street<br />Société par actions simplifiée<br />59 Avenue Joffre<br />93800 Épinay-sur-Seine, France<br />Téléphone : +33 1 80 90 72 51<br />E-mail : info@kamistreet.fr</p>
+        <p>Kami Street<br />Société par actions simplifiée<br />59 Avenue Joffre<br />93800 Épinay-sur-Seine, France<br />Téléphone : +33 1 80 90 72 51<br />E-mail : contact@kamistreet.fr</p>
         <p>SIREN : 104 079 264<br />SIRET du siège social : 104 079 264 00016<br />TVA intracommunautaire : FR42 104079264<br />Activité : commerce de détail d’articles de sport en magasin spécialisé (APE/NAF 4764Z)<br />Date de création : 23 avril 2026</p>
         <p>Capital social : <strong>à compléter par l’exploitant</strong>.</p>
         <h2 className="display text-2xl font-bold text-foreground pt-6">Hébergement</h2>
