@@ -329,6 +329,7 @@ class InvoiceIn(BaseModel):
     notes: str = ""
     payment_method: str = ""
     amount_paid: Optional[float] = None
+    seller_name: str = "Vente en ligne"
 
 
 # ----------------------------- Email (Hostinger SMTP, Brevo fallback) -----------------------------
@@ -1167,11 +1168,11 @@ async def next_invoice_number() -> str:
 
 
 PAYMENT_METHOD_LABELS = {
-    "stripe": "Carte bancaire",
-    "mollie": "Carte bancaire",
+    "stripe": "Carte",
+    "mollie": "Carte",
     "alma": "Paiement en plusieurs fois (Alma)",
     "qonto": "Virement bancaire",
-    "woocommerce": "Carte bancaire",
+    "woocommerce": "Carte",
 }
 
 
@@ -1194,8 +1195,9 @@ async def ensure_invoice_for_order(order: dict) -> Optional[dict]:
         ],
         "tax_rate": 20.0,
         "notes": "",
-        "payment_method": PAYMENT_METHOD_LABELS.get(order.get("provider", ""), ""),
+        "payment_method": PAYMENT_METHOD_LABELS.get(order.get("provider", ""), "Carte"),
         "amount_paid": order.get("total", 0),
+        "seller_name": "Vente en ligne",
         "status": "issued",
         "created_at": now_iso(),
         "updated_at": now_iso(),

@@ -238,7 +238,8 @@ def generate_invoice_pdf(invoice: dict) -> bytes:
     flow.append(Paragraph(_amount_in_words(total_ttc), STYLE_AMOUNT_WORDS))
     flow.append(Spacer(1, 14 * mm))
 
-    flow.append(Paragraph("Nom du vendeur", STYLE_SMALL))
+    seller_name = invoice.get("seller_name") or "Vente en ligne"
+    flow.append(Paragraph(f"<b>Nom du vendeur :</b> {seller_name}", STYLE_SMALL))
 
     flow.append(Spacer(1, 14 * mm))
     flow.append(HRFlowable(width="100%", thickness=0.75, color=BORDER))

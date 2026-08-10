@@ -689,8 +689,8 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
   const emptyInvoice = {
     order_id: null, order_no: "", customer_name: "", customer_email: "",
     billing_address: { line1: "", city: "", postal_code: "", country: "France" },
-    items: [{ name: "", quantity: 1, unit_price: 0 }],
-    tax_rate: 20.0, notes: "",
+    items: [{ ref: "", name: "", quantity: 1, unit_price: 0 }],
+    tax_rate: 20.0, notes: "", payment_method: "Carte", seller_name: "Vente en ligne",
   };
   const [form, setForm] = useState(emptyInvoice);
 
@@ -704,7 +704,9 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
     setForm({
       ...inv,
       billing_address: inv.billing_address || { line1: "", city: "", postal_code: "", country: "France" },
-      items: inv.items?.length ? inv.items : [{ name: "", quantity: 1, unit_price: 0 }],
+      items: inv.items?.length ? inv.items : [{ ref: "", name: "", quantity: 1, unit_price: 0 }],
+      payment_method: inv.payment_method || "Carte",
+      seller_name: inv.seller_name || "Vente en ligne",
     });
     setOpen(true);
   };
@@ -713,13 +715,13 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
     const newItems = form.items.map((it, i) => (i === idx ? { ...it, ...patch } : it));
     setForm({ ...form, items: newItems });
   };
-  const addItem = () => setForm({ ...form, items: [...form.items, { name: "", quantity: 1, unit_price: 0 }] });
+  const addItem = () => setForm({ ...form, items: [...form.items, { ref: "", name: "", quantity: 1, unit_price: 0 }] });
   const removeItem = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
 
   const save = async () => {
     const body = {
       ...form,
-      items: form.items.map(i => ({ name: i.name, quantity: parseInt(i.quantity) || 1, unit_price: parseFloat(i.unit_price) || 0 })),
+      items: form.items.map(i => ({ ref: i.ref || "", name: i.name, quantity: parseInt(i.quantity) || 1, unit_price: parseFloat(i.unit_price) || 0 })),
       tax_rate: parseFloat(form.tax_rate) || 0,
     };
     try {
@@ -841,7 +843,8 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
               <Label>Articles</Label>
               <div className="space-y-2 mt-2">
                 {form.items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_60px_90px_auto] gap-2 items-center">
+                  <div key={idx} className="grid grid-cols-[80px_1fr_60px_90px_auto] gap-2 items-center">
+                    <Input placeholder="Réf." value={it.ref || ""} onChange={e => updateItem(idx, { ref: e.target.value })} />
                     <Input placeholder="Description" value={it.name} onChange={e => updateItem(idx, { name: e.target.value })} />
                     <Input type="number" placeholder="Qté" value={it.quantity} onChange={e => updateItem(idx, { quantity: e.target.value })} />
                     <Input type="number" step="0.01" placeholder="Prix unit." value={it.unit_price} onChange={e => updateItem(idx, { unit_price: e.target.value })} />
@@ -854,9 +857,23 @@ function InvoicesPanel({ items, orders, authAxios, reload }) {
 
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Taux de TVA (%)</Label><Input type="number" step="0.1" value={form.tax_rate} onChange={e => setForm({ ...form, tax_rate: e.target.value })} /></div>
-              <div className="flex items-end pb-2 text-sm text-muted-foreground">
-                Total TTC : <span className="font-bold text-accent ml-1">{computeInvoiceTotals(form).total.toFixed(2)} €</span>
+              <div>
+                <Label>Mode de règlement</Label>
+                <Select value={form.payment_method || "Carte"} onValueChange={v => setForm({ ...form, payment_method: v })}>
+                  <SelectTrigger className="rounded-none"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Carte">Carte</SelectItem>
+                    <SelectItem value="Espèces">Espèces</SelectItem>
+                    <SelectItem value="Virement bancaire">Virement bancaire</SelectItem>
+                    <SelectItem value="Chèque">Chèque</SelectItem>
+                    <SelectItem value="Paiement en plusieurs fois (Alma)">Paiement en plusieurs fois (Alma)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+            <div><Label>Nom du vendeur</Label><Input value={form.seller_name || ""} onChange={e => setForm({ ...form, seller_name: e.target.value })} placeholder="Vente en ligne" /></div>
+            <div className="text-sm text-muted-foreground">
+              Total TTC : <span className="font-bold text-accent ml-1">{computeInvoiceTotals(form).total.toFixed(2)} €</span>
             </div>
             <div><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
 
