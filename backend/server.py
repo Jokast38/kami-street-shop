@@ -54,7 +54,7 @@ BREVO_SENDER_NAME = os.environ["BREVO_SENDER_NAME"]
 SMTP_HOST = os.environ.get("HOSTINGER_MAIL_HOST", "")
 SMTP_PORT = int(os.environ.get("HOSTINGER_MAIL_PORT", "465"))
 SMTP_USER = os.environ.get("HOSTINGER_MAIL_USER", "")
-SMTP_PASSWORD = os.environ.get("HOSTINGER_API_KEY", "")
+SMTP_PASSWORD = os.environ.get("HOSTINGER_EMAIL_PASSWORD", "")
 SMTP_SENDER_NAME = os.environ.get("HOSTINGER_SENDER_NAME", "Kami Street")
 
 WOO_KEY = os.environ["WOOCOMMERCE_KEY_K"]
