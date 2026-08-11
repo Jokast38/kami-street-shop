@@ -164,18 +164,34 @@ function ProductsPanel({ items, authAxios, reload }) {
   const [uploading, setUploading] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
 
-  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null };
+  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null, variations: [] };
   const [form, setForm] = useState(emptyProd);
 
   const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
 
+  const attributesToText = (attrs) => Object.entries(attrs || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+  const textToAttributes = (text) => Object.fromEntries((text || "").split(",").map(s => s.trim()).filter(Boolean).map(pair => {
+    const [k, ...rest] = pair.split(":");
+    return [k.trim(), rest.join(":").trim()];
+  }).filter(([k]) => k));
+
   const openNew = () => { setEditing(null); setForm(emptyProd); setNewImageUrl(""); setOpen(true); };
   const openEdit = (p) => {
     setEditing(p);
-    setForm({ ...p, categories: (p.categories || []).join(", "), brands: (p.brands || []).join(", "), images: p.images || [] });
+    setForm({
+      ...p,
+      categories: (p.categories || []).join(", "),
+      brands: (p.brands || []).join(", "),
+      images: p.images || [],
+      variations: (p.variations || []).map(v => ({ ...v, attributesText: attributesToText(v.attributes) })),
+    });
     setNewImageUrl("");
     setOpen(true);
   };
+
+  const addVariation = () => setForm(f => ({ ...f, variations: [...(f.variations || []), { id: `var-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: "", price: "", sale_price: "", stock: 0, attributesText: "", image: "" }] }));
+  const updateVariation = (idx, field, value) => setForm(f => ({ ...f, variations: f.variations.map((v, i) => i === idx ? { ...v, [field]: value } : v) }));
+  const removeVariation = (idx) => setForm(f => ({ ...f, variations: f.variations.filter((_, i) => i !== idx) }));
 
   const addImageUrl = () => {
     const url = newImageUrl.trim();
@@ -212,7 +228,15 @@ function ProductsPanel({ items, authAxios, reload }) {
       categories: (form.categories || "").split(",").map(s => s.trim()).filter(Boolean),
       brands: (form.brands || "").split(",").map(s => s.trim()).filter(Boolean),
       images: form.images || [],
-      variations: form.variations || [],
+      variations: (form.variations || []).map(v => ({
+        id: v.id,
+        name: v.name,
+        price: v.price ? parseFloat(v.price) : 0,
+        sale_price: v.sale_price ? parseFloat(v.sale_price) : null,
+        stock: parseInt(v.stock) || 0,
+        attributes: textToAttributes(v.attributesText),
+        image: v.image || "",
+      })),
     };
     try {
       if (editing) await authAxios.put(`/admin/products/${editing.id}`, body);
@@ -307,6 +331,35 @@ function ProductsPanel({ items, authAxios, reload }) {
                 <div><Label>Prix du lot (€)</Label><Input type="number" min="0" step="0.01" value={form.bundle_price || ""} onChange={e => setForm({ ...form, bundle_price: e.target.value })} /></div>
               </div>}
             </div>
+
+            <div className="border border-border p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <Label>Variantes ({(form.variations || []).length})</Label>
+                <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={addVariation} data-testid="add-variation-btn"><Plus className="w-4 h-4 mr-1" />Ajouter une variante</Button>
+              </div>
+              {(form.variations || []).map((v, idx) => (
+                <div key={v.id || idx} className="border border-border p-3 space-y-2 relative" data-testid={`variation-row-${idx}`}>
+                  <button
+                    type="button"
+                    onClick={() => removeVariation(idx)}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center text-xs"
+                    aria-label="Supprimer la variante"
+                    data-testid={`remove-variation-${idx}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                  <div><Label className="text-xs">Nom de la variante</Label><Input value={v.name} onChange={e => updateVariation(idx, "name", e.target.value)} placeholder="Ex: Rouge / M" /></div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><Label className="text-xs">Prix (€)</Label><Input type="number" step="0.01" value={v.price} onChange={e => updateVariation(idx, "price", e.target.value)} /></div>
+                    <div><Label className="text-xs">Prix promo</Label><Input type="number" step="0.01" value={v.sale_price || ""} onChange={e => updateVariation(idx, "sale_price", e.target.value)} /></div>
+                    <div><Label className="text-xs">Stock</Label><Input type="number" value={v.stock} onChange={e => updateVariation(idx, "stock", e.target.value)} /></div>
+                  </div>
+                  <div><Label className="text-xs">Attributs (ex: Couleur: Rouge, Taille: M)</Label><Input value={v.attributesText} onChange={e => updateVariation(idx, "attributesText", e.target.value)} placeholder="Couleur: Rouge, Taille: M" /></div>
+                  <div><Label className="text-xs">Image (URL)</Label><Input value={v.image} onChange={e => updateVariation(idx, "image", e.target.value)} placeholder="https://..." /></div>
+                </div>
+              ))}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Catégories (séparées par virgule)</Label><Input value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
               <div><Label>Marques (séparées par virgule)</Label><Input value={form.brands} onChange={e => setForm({ ...form, brands: e.target.value })} /></div>
