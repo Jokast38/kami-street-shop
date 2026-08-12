@@ -2263,7 +2263,7 @@ async def sync_woo(user=Depends(current_staff)):
             if not items:
                 break
             for p in items:
-                existing_product = await db.products.find_one({"woo_id": p["id"]}, {"_id": 0, "price": 1})
+                existing_product = await db.products.find_one({"woo_id": p["id"]}, {"_id": 0, "price": 1, "featured": 1})
                 regular_price = _woo_money(p.get("regular_price"))
                 current_price = _woo_money(p.get("price"))
                 if regular_price is None:
@@ -2303,7 +2303,7 @@ async def sync_woo(user=Depends(current_staff)):
                     "brands": [b["slug"] for b in p.get("brands", [])],
                     "images": [img["src"] for img in p.get("images", []) if img.get("src")],
                     "variations": variations,
-                    "featured": p.get("featured", False),
+                    "featured": (existing_product or {}).get("featured", p.get("featured", False)),
                     "active": p.get("status") == "publish",
                     "wc_status": p.get("status"),
                     "updated_at": now_iso(),
