@@ -74,13 +74,22 @@ export default function Home() {
   const { theme } = useTheme();
   const koalaSrc = theme === "dark" ? "/logo/logo-koala-black.png" : "/logo/logo-koala-offwhite.png";
   const [products, setProducts] = useState([]);
+  const [alsoLike, setAlsoLike] = useState([]);
   const [accessories, setAccessories] = useState([]);
   const [banners, setBanners] = useState([]);
   const [blog, setBlog] = useState([]);
   const [heroIndex, setHeroIndex] = useState(0);
 
   useEffect(() => {
-    api.get("/products", { params: { limit: 8 } }).then(r => setProducts(r.data)).catch(() => {});
+    api.get("/products", { params: { featured: true, limit: 8 } }).then(r => setProducts(r.data)).catch(() => {});
+    Promise.all([
+      api.get("/products", { params: { category: "fatbike", featured: false, limit: 8 } }).then(r => r.data).catch(() => []),
+      api.get("/products", { params: { category: "trottinettes-electriques", featured: false, limit: 8 } }).then(r => r.data).catch(() => []),
+    ]).then(([bikes, scooters]) => {
+      const seen = new Set();
+      const merged = [...bikes, ...scooters].filter(p => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+      setAlsoLike(merged.slice(0, 8));
+    });
     api.get("/products", { params: { category: "accessoires", limit: 8 } }).then(r => setAccessories(r.data)).catch(() => {});
     api.get("/banners").then(r => setBanners(r.data)).catch(() => {});
     api.get("/blog", { params: { limit: 3 } }).then(r => setBlog(r.data)).catch(() => {});
@@ -253,6 +262,24 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {/* On propose aussi */}
+      {alsoLike.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 py-16 border-t border-border">
+          <div className="flex items-end justify-between mb-10">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// À découvrir aussi</div>
+              <h2 className="display text-3xl md:text-4xl font-black">On propose aussi</h2>
+            </div>
+            <Link to="/shop" className="text-sm uppercase tracking-widest hover:text-accent inline-flex items-center gap-2">
+              Voir tout <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6" data-testid="also-like-products">
+            {alsoLike.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
+          </div>
+        </section>
+      )}
 
       <section className="border-y border-border bg-secondary/40" aria-labelledby="test-ride-title">
         <div className="max-w-7xl mx-auto px-6 py-14 md:py-20 grid lg:grid-cols-[0.9fr_1.1fr] gap-10 items-center">
