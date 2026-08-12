@@ -263,13 +263,13 @@ export default function Home() {
         )}
       </section>
 
-      {/* On propose aussi */}
+      {/* Nous proposons aussi */}
       {alsoLike.length > 0 && (
         <section className="max-w-7xl mx-auto px-6 py-16 border-t border-border">
           <div className="flex items-end justify-between mb-10">
             <div>
               <div className="text-xs uppercase tracking-[0.3em] text-black dark:text-accent mb-2">// À découvrir aussi</div>
-              <h2 className="display text-3xl md:text-4xl font-black">On propose aussi</h2>
+              <h2 className="display text-3xl md:text-4xl font-black">Nous proposons aussi</h2>
             </div>
             <Link to="/shop" className="text-sm uppercase tracking-widest hover:text-accent inline-flex items-center gap-2">
               Voir tout <ArrowRight className="w-4 h-4" />
