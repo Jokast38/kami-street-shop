@@ -3,16 +3,20 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import SEO from "@/components/SEO";
+import { withImageAlt } from "@/lib/html";
 
 // WooCommerce category descriptions are raw HTML with their own inline styles (often
 // text-align:center, sometimes a duplicate <h1>). Strip that out so it doesn't fight
 // with the page's own layout, which is what caused the misaligned/offset look.
-function sanitizeCategoryHtml(html) {
+function sanitizeCategoryHtml(html, fallbackAlt) {
   if (!html) return "";
-  return html
-    .replace(/\sstyle="[^"]*"/gi, "")
-    .replace(/<h1(\s[^>]*)?>/gi, "<h2>")
-    .replace(/<\/h1>/gi, "</h2>");
+  return withImageAlt(
+    html
+      .replace(/\sstyle="[^"]*"/gi, "")
+      .replace(/<h1(\s[^>]*)?>/gi, "<h2>")
+      .replace(/<\/h1>/gi, "</h2>"),
+    fallbackAlt
+  );
 }
 
 export default function CategoryPage() {
@@ -44,7 +48,7 @@ export default function CategoryPage() {
 
   const metaDescription = category?.description
     ? category.description.replace(/<[^>]+>/g, "").trim().slice(0, 160)
-    : `Découvrez la sélection ${category?.name || ""} chez Kami Street.`;
+    : `Découvrez notre sélection ${category?.name || ""} chez Kami Street : modèles électriques made in France, garantie constructeur, essai en magasin à Épinay-sur-Seine.`.slice(0, 160);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
@@ -78,7 +82,7 @@ export default function CategoryPage() {
             <div className="max-w-4xl mx-auto mt-10 pt-10 border-t border-border">
               <div
                 className="category-description prose-ks text-muted-foreground"
-                dangerouslySetInnerHTML={{ __html: sanitizeCategoryHtml(category.description) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeCategoryHtml(category.description, category.name) }}
               />
             </div>
           )}

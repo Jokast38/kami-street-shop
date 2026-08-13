@@ -38,12 +38,16 @@ export default function ProductDetail() {
     "description": p.short_description || p.description || p.name,
     "image": images,
     "sku": p.id,
+    "brand": { "@type": "Brand", "name": p.brands?.[0] || "Kami Street" },
+    "category": p.categories?.[0],
     "offers": {
       "@type": "Offer",
       "url": `${SITE_URL}/product/${p.slug}`,
       "priceCurrency": "EUR",
       "price": currentPrice,
+      "itemCondition": "https://schema.org/NewCondition",
       "availability": (p.stock || 0) > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      "seller": { "@type": "Organization", "name": "Kami Street" },
     },
   };
 

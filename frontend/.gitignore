@@ -11,6 +11,9 @@
 # production
 /build
 
+# generated at build time by scripts/generate-sitemap.js
+/public/sitemap.xml
+
 # misc
 .DS_Store
 .env.local

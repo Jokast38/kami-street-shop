@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import SEO, { SITE_URL } from "@/components/SEO";
+import { withImageAlt } from "@/lib/html";
 
 const stripHtml = (html) => (html || "").replace(/<[^>]+>/g, "").trim();
 
@@ -41,7 +42,7 @@ export default function BlogPost() {
       </div>
       <h1 className="display text-3xl md:text-5xl font-black mb-6" dangerouslySetInnerHTML={{ __html: post.title }} data-testid="blog-post-title" />
       {post.featured_image && <img src={post.featured_image} alt={plainTitle} className="w-full aspect-video object-cover mb-8" />}
-      <div className="prose-ks" dangerouslySetInnerHTML={{ __html: post.content }} />
+      <div className="prose-ks" dangerouslySetInnerHTML={{ __html: withImageAlt(post.content, plainTitle) }} />
     </article>
   );
 }

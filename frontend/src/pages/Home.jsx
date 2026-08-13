@@ -124,8 +124,8 @@ export default function Home() {
   return (
     <>
       <SEO
-        title="Vélos électriques & Fatbikes à Épinay-sur-Seine | Kami Street"
-        description="Kami Street propose des vélos électriques, fatbikes électriques, scooters et trottinettes électriques. Essayez votre vélo en magasin à Épinay-sur-Seine, en Île-de-France."
+        title="Fatbikes Électriques à Épinay-sur-Seine | Kami Street"
+        description="Kami Street : fatbikes, vélos, scooters et trottinettes électriques made in France. Essai en magasin à Épinay-sur-Seine, livraison 48h partout en France."
         path="/"
         jsonLd={[FAQ_JSON_LD, LOCAL_STORE_JSON_LD]}
       />

@@ -2546,6 +2546,9 @@ async def sitemap():
     products = await db.products.find({"active": True}, {"slug": 1, "updated_at": 1, "_id": 0}).to_list(5000)
     for p in products:
         urls.append((f"{FRONTEND_URL}/product/{p['slug']}", p.get("updated_at")))
+    categories = await db.categories.find({}, {"slug": 1, "_id": 0}).to_list(500)
+    for c in categories:
+        urls.append(f"{FRONTEND_URL}/product-category/{c['slug']}")
     posts = await db.blog.find({"published": True}, {"slug": 1, "published_at": 1, "_id": 0}).to_list(5000)
     for b in posts:
         urls.append((f"{FRONTEND_URL}/blog/{b['slug']}", b.get("published_at")))
@@ -2567,6 +2570,73 @@ async def sitemap():
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         + "\n".join(entries)
         + "\n</urlset>"
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+# ----------------------------- Google Merchant Center feed -----------------------------
+# RSS 2.0 + <g:*> namespace, per Google's product feed spec:
+# https://support.google.com/merchants/answer/7052112
+# Submit this URL as a "Scheduled fetch" content source in Merchant Center so products
+# become eligible for free product listings / Shopping ads and Product rich results.
+@app.get("/google-merchant-feed.xml")
+async def google_merchant_feed():
+    from fastapi.responses import Response
+    from xml.sax.saxutils import escape
+
+    products = await db.products.find({"active": True}, {"_id": 0}).to_list(5000)
+
+    items = []
+    for p in products:
+        price = p.get("sale_price") or p.get("price") or 0
+        regular_price = p.get("price") or price
+        images = p.get("images") or []
+        if not images:
+            continue  # Merchant Center requires at least one image per item
+        stock = p.get("stock") or 0
+        brand = (p.get("brands") or ["Kami Street"])[0]
+        category = (p.get("categories") or [""])[0]
+        description = (p.get("short_description") or p.get("description") or p["name"])
+        description = re.sub(r"<[^>]+>", " ", description).strip()[:5000]
+
+        parts = [
+            "  <item>",
+            f"    <g:id>{escape(str(p['id']))}</g:id>",
+            f"    <title>{escape(p['name'][:150])}</title>",
+            f"    <description>{escape(description)}</description>",
+            f"    <link>{escape(FRONTEND_URL)}/product/{escape(p['slug'])}</link>",
+            f"    <g:image_link>{escape(images[0])}</g:image_link>",
+        ]
+        for extra_img in images[1:10]:
+            parts.append(f"    <g:additional_image_link>{escape(extra_img)}</g:additional_image_link>")
+        parts += [
+            f"    <g:availability>{'in stock' if stock > 0 else 'out of stock'}</g:availability>",
+            f"    <g:price>{regular_price:.2f} EUR</g:price>",
+        ]
+        if price < regular_price:
+            parts.append(f"    <g:sale_price>{price:.2f} EUR</g:sale_price>")
+        parts += [
+            "    <g:condition>new</g:condition>",
+            f"    <g:brand>{escape(brand)}</g:brand>",
+            f"    <g:product_type>{escape(category)}</g:product_type>",
+            "    <g:identifier_exists>false</g:identifier_exists>",
+            "    <g:shipping>",
+            "      <g:country>FR</g:country>",
+            "      <g:price>0.00 EUR</g:price>",
+            "    </g:shipping>",
+            "  </item>",
+        ]
+        items.append("\n".join(parts))
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">\n'
+        "<channel>\n"
+        "  <title>Kami Street — Catalogue produits</title>\n"
+        f"  <link>{FRONTEND_URL}</link>\n"
+        "  <description>Flux produits Kami Street pour Google Merchant Center</description>\n"
+        + "\n".join(items)
+        + "\n</channel>\n</rss>"
     )
     return Response(content=xml, media_type="application/xml")
 
