@@ -98,6 +98,9 @@ ALMA_API_MODE = os.environ.get("ALMA_API_MODE", os.environ.get("ALMA_MODE", "tes
 # host if not set explicitly, since that one is already known to be publicly reachable.
 BACKEND_URL = os.environ.get("BACKEND_URL") or QONTO_REDIRECT_URI.split("/api/")[0]
 
+GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+GOOGLE_PLACE_ID = os.environ.get("GOOGLE_PLACE_ID", "")
+
 # MongoDB
 client = AsyncIOMotorClient(
     MONGO_URL,
@@ -741,6 +744,74 @@ async def get_blog(slug: str):
     if not p:
         raise HTTPException(404, "Article introuvable")
     return p
+
+
+GOOGLE_REVIEWS_CACHE_ID = "google_reviews_cache"
+GOOGLE_REVIEWS_CACHE_TTL_SECONDS = 6 * 3600  # Places Details is rate-limited/billed; refresh a few times a day.
+
+
+@api.get("/google-reviews")
+async def google_reviews():
+    """Google's Place Details API caps this at ~5 "most relevant" reviews and never
+    exposes photos attached to a review (only the reviewer's profile photo) — that's
+    a hard API limitation, not something this endpoint can work around."""
+    write_review_url = f"https://search.google.com/local/writereview?placeid={GOOGLE_PLACE_ID}" if GOOGLE_PLACE_ID else None
+
+    cached = await db.settings.find_one({"id": GOOGLE_REVIEWS_CACHE_ID}, {"_id": 0})
+    if cached and cached.get("fetched_at"):
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached["fetched_at"])).total_seconds()
+        if age < GOOGLE_REVIEWS_CACHE_TTL_SECONDS:
+            return {**cached["data"], "write_review_url": write_review_url}
+
+    if not GOOGLE_PLACES_API_KEY or not GOOGLE_PLACE_ID:
+        if cached:
+            return {**cached["data"], "write_review_url": write_review_url}
+        return {"rating": None, "user_ratings_total": 0, "reviews": [], "write_review_url": write_review_url}
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(
+                "https://maps.googleapis.com/maps/api/place/details/json",
+                params={
+                    "place_id": GOOGLE_PLACE_ID,
+                    "fields": "name,rating,user_ratings_total,reviews,url",
+                    "language": "fr",
+                    "key": GOOGLE_PLACES_API_KEY,
+                },
+            )
+            payload = r.json()
+        result = payload.get("result", {})
+        if payload.get("status") != "OK":
+            raise RuntimeError(payload.get("status", "UNKNOWN_ERROR"))
+
+        reviews = [
+            {
+                "author_name": rev.get("author_name"),
+                "profile_photo_url": rev.get("profile_photo_url"),
+                "rating": rev.get("rating"),
+                "relative_time_description": rev.get("relative_time_description"),
+                "text": rev.get("text"),
+                "time": rev.get("time"),
+            }
+            for rev in result.get("reviews", [])
+        ]
+        data = {
+            "rating": result.get("rating"),
+            "user_ratings_total": result.get("user_ratings_total", 0),
+            "reviews": reviews,
+            "google_maps_url": result.get("url"),
+        }
+        await db.settings.update_one(
+            {"id": GOOGLE_REVIEWS_CACHE_ID},
+            {"$set": {"id": GOOGLE_REVIEWS_CACHE_ID, "data": data, "fetched_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        return {**data, "write_review_url": write_review_url}
+    except Exception as e:
+        logging.warning(f"google_reviews: fetch failed ({e}), serving cache/fallback")
+        if cached:
+            return {**cached["data"], "write_review_url": write_review_url}
+        return {"rating": None, "user_ratings_total": 0, "reviews": [], "write_review_url": write_review_url}
 
 
 @api.get("/banners")

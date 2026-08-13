@@ -6,6 +6,7 @@ import Marquee from "react-fast-marquee";
 import { api } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import StoreMap from "@/components/StoreMap";
+import GoogleReviews from "@/components/GoogleReviews";
 import SEO from "@/components/SEO";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useTheme } from "@/context/ThemeContext";
@@ -364,6 +365,8 @@ export default function Home() {
           ))}
         </Marquee>
       </section>
+
+      <GoogleReviews />
 
       {/* FAQ */}
       <section className="max-w-4xl mx-auto px-6 py-16 border-t border-border">
