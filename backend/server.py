@@ -1060,7 +1060,8 @@ async def build_catalog_context(limit: int = 200) -> str:
 
 CHAT_SYSTEM_PROMPT = """Tu es l'assistant virtuel de la boutique en ligne Kami Street.
 Tu aides les visiteurs à trouver des produits, tu réponds à leurs questions sur le catalogue,
-les prix, le stock et les catégories.
+les prix, le stock, les catégories, et tu prends en charge les demandes de commande
+en quantité (gros volumes, packs, réassort) ainsi que les demandes de rappel client.
 
 Règles strictes :
 - Ne recommande QUE des produits présents dans le catalogue fourni ci-dessous. N'invente jamais de produit, de prix ou de caractéristique.
@@ -1071,11 +1072,23 @@ Règles strictes :
   [[PRODUCTS: slug1, slug2]]
   en utilisant les "slug" exacts du catalogue (1 à 3 produits max, les plus pertinents). N'ajoute cette ligne que si tu recommandes des produits précis, jamais sinon.
 
+Commandes en quantité précise (ex : "je veux 50 unités du produit X", "commande en gros") :
+- Confirme le produit, la quantité demandée et vérifie mentalement que le stock annoncé au catalogue est suffisant (sans jamais promettre une disponibilité que le catalogue ne confirme pas).
+- Si la quantité est importante (au-delà de ce qu'un client normal achèterait, ou si le stock semble insuffisant) ou si le client demande un tarif dégressif/pro, indique que la commande sera confirmée par un conseiller et propose de laisser ses coordonnées pour être rappelé.
+- Ne finalise jamais un paiement ou une commande toi-même : ton rôle est d'informer et d'orienter vers le tunnel de commande du site ou vers un rappel humain.
+
+Demande de rappel / "personne ne décroche" :
+- Si le client dit qu'il a essayé d'appeler sans succès, qu'il veut être rappelé, ou que sa demande nécessite un humain (négociation, réclamation, cas non couvert par le catalogue), propose-lui de laisser : nom, numéro de téléphone, et créneau ou produit concerné.
+- Une fois ces informations données par le client dans la conversation, termine ta réponse par une ligne unique au format exact :
+  [[CALLBACK: nom=..., telephone=..., sujet=...]]
+  Ne mets cette ligne que quand tu as bien obtenu au minimum un numéro de téléphone. N'invente jamais ces informations.
+
 Catalogue actuel de la boutique :
 {catalog}
 """
 
 PRODUCTS_TAG_RE = re.compile(r"\[\[PRODUCTS:\s*([^\]]+)\]\]", re.IGNORECASE)
+CALLBACK_TAG_RE = re.compile(r"\[\[CALLBACK:\s*([^\]]+)\]\]", re.IGNORECASE)
 
 
 class ChatMessage(BaseModel):
@@ -1129,7 +1142,28 @@ async def chat(body: ChatIn):
             by_slug = {d["slug"]: d for d in docs}
             products = [by_slug[s] for s in slugs if s in by_slug]
 
-    return {"reply": reply, "products": products}
+    callback_requested = False
+    cb_match = CALLBACK_TAG_RE.search(reply)
+    if cb_match:
+        reply = CALLBACK_TAG_RE.sub("", reply).strip()
+        fields = {}
+        for part in cb_match.group(1).split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                fields[k.strip().lower()] = v.strip()
+        if fields.get("telephone"):
+            await db.callback_requests.insert_one({
+                "id": str(uuid.uuid4()),
+                "name": fields.get("nom", ""),
+                "phone": fields.get("telephone", ""),
+                "subject": fields.get("sujet", ""),
+                "source": "chat_widget",
+                "status": "new",
+                "created_at": now_iso(),
+            })
+            callback_requested = True
+
+    return {"reply": reply, "products": products, "callback_requested": callback_requested}
 
 
 # ----------------------------- Admin: Products CRUD -----------------------------

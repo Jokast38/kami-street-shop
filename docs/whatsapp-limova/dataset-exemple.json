@@ -1,0 +1,63 @@
+{
+  "catalogue_exemple": [
+    {
+      "slug": "sac-a-main-cuir-noir",
+      "nom": "Sac à main cuir noir",
+      "prix": 39.90,
+      "prix_promo": null,
+      "stock": "en stock",
+      "categories": ["Sacs", "Nouveautés"],
+      "description_courte": "Sac à main en simili cuir, fermeture zip, bandoulière amovible."
+    },
+    {
+      "slug": "montre-connectee-sport",
+      "nom": "Montre connectée Sport",
+      "prix": 59.00,
+      "prix_promo": 45.00,
+      "stock": "en stock",
+      "categories": ["Accessoires", "Tech"],
+      "description_courte": "Suivi d'activité, notifications, étanche, autonomie 7 jours."
+    },
+    {
+      "slug": "casquette-brodee-ks",
+      "nom": "Casquette brodée KS",
+      "prix": 19.90,
+      "prix_promo": null,
+      "stock": "rupture de stock",
+      "categories": ["Accessoires"],
+      "description_courte": "Casquette coton, logo brodé, réglable."
+    }
+  ],
+  "scenarios_test": [
+    {
+      "nom": "Question stock simple",
+      "message_client": "Vous avez la casquette KS ?",
+      "reponse_attendue_type": "Indiquer rupture de stock + proposer alternative du catalogue"
+    },
+    {
+      "nom": "Commande quantité normale",
+      "message_client": "Je veux 3 montres connectées Sport",
+      "reponse_attendue_type": "Confirmer produit, prix promo, total, inviter à finaliser ou conseiller confirme"
+    },
+    {
+      "nom": "Commande en gros",
+      "message_client": "Je veux 50 sacs à main cuir noir pour ma boutique, vous faites un prix ?",
+      "reponse_attendue_type": "Ne pas annoncer de tarif dégressif, basculer en collecte de coordonnées"
+    },
+    {
+      "nom": "Appel manqué",
+      "message_client": "(déclenché automatiquement après appel non décroché)",
+      "reponse_attendue_type": "Message d'accueil standard, proposer aide catalogue ou rappel"
+    },
+    {
+      "nom": "Réclamation",
+      "message_client": "Ma commande n'est jamais arrivée, je veux être remboursé",
+      "reponse_attendue_type": "Pas de traitement automatique, collecte coordonnées prioritaire"
+    },
+    {
+      "nom": "Collecte réussie",
+      "message_client": "Je m'appelle Awa Diallo, mon numéro est 07 12 34 56 78, c'est pour la commande en gros de sacs",
+      "reponse_attendue_type": "Confirmer rappel sous 24h + émettre [[CALLBACK: nom=Awa Diallo, telephone=0712345678, sujet=commande en gros de sacs, creneau=]]"
+    }
+  ]
+}
