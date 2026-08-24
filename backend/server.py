@@ -274,6 +274,7 @@ class BlogIn(BaseModel):
 class BannerIn(BaseModel):
     title: str
     subtitle: str = ""
+    promo_label: str = ""
     image: str
     cta_text: str = "Shop Now"
     cta_link: str = "/shop"

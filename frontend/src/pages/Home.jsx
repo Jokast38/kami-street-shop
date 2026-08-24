@@ -145,6 +145,11 @@ export default function Home() {
           />
         </AnimatePresence>
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+        {hero.promo_label && (
+          <div className="absolute top-6 right-6 z-20 bg-red-600 text-white font-black uppercase tracking-wide px-4 py-2 text-sm sm:text-base rotate-3 shadow-lg">
+            {hero.promo_label}
+          </div>
+        )}
         <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-10 w-full">
           <div className="max-w-xl">
             <AnimatePresence mode="wait">

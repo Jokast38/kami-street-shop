@@ -528,7 +528,7 @@ function BlogPanel({ items, authAxios, reload }) {
 function BannersPanel({ items, authAxios, reload }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const empty = { title: "", subtitle: "", image: "", cta_text: "Shop Now", cta_link: "/shop", active: true, order: 0 };
+  const empty = { title: "", subtitle: "", promo_label: "", image: "", cta_text: "Shop Now", cta_link: "/shop", active: true, order: 0 };
   const [form, setForm] = useState(empty);
 
   const save = async () => {
@@ -550,7 +550,16 @@ function BannersPanel({ items, authAxios, reload }) {
       <div className="grid md:grid-cols-2 gap-4">
         {items.map(b => (
           <div key={b.id} className="border border-border overflow-hidden">
-            {b.image && <img src={b.image} alt={b.title} className="w-full aspect-video object-cover" />}
+            {b.image && (
+              <div className="relative">
+                <img src={b.image} alt={b.title} className="w-full aspect-video object-cover" />
+                {b.promo_label && (
+                  <span className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold uppercase px-2 py-1 tracking-wide">
+                    {b.promo_label}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="p-4">
               <div className="font-bold">{b.title}</div>
               <div className="text-xs text-muted-foreground">{b.subtitle}</div>
@@ -570,6 +579,10 @@ function BannersPanel({ items, authAxios, reload }) {
           <div className="space-y-3">
             <div><Label>Titre</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             <div><Label>Sous-titre</Label><Input value={form.subtitle} onChange={e => setForm({ ...form, subtitle: e.target.value })} /></div>
+            <div>
+              <Label>Titre promo (badge rouge sur l'image, optionnel)</Label>
+              <Input placeholder="Ex: -20% / SOLDES" value={form.promo_label} onChange={e => setForm({ ...form, promo_label: e.target.value })} />
+            </div>
             <div><Label>Image (URL)</Label><Input value={form.image} onChange={e => setForm({ ...form, image: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Texte CTA</Label><Input value={form.cta_text} onChange={e => setForm({ ...form, cta_text: e.target.value })} /></div>
