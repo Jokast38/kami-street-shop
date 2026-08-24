@@ -462,7 +462,7 @@ def email_template(title: str, body_html: str) -> str:
     Colors match the site's light-theme CSS tokens (--background/--foreground/--accent in index.css)."""
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;background:#FAFAFA;color:#0E0E10;padding:24px">
-      <img src="cid:{EMAIL_LOGO_CID}" alt="Kami Street" height="36" style="height:36px;width:auto;display:block;margin:0 0 16px">
+      <img src="https://{COMPANY_LEGAL['site']}/logo/kami-street-black.png" alt="Kami Street" height="36" style="height:36px;width:auto;display:block;margin:0 0 16px">
       {f'<h2 style="margin:0 0 12px">{title}</h2>' if title else ''}
       {body_html}
       {email_legal_footer_html()}

@@ -1164,7 +1164,13 @@ function MailboxPanel({ authAxios }) {
               </div>
               <div className="border-t border-border pt-4">
                 {selectedFull.html ? (
-                  <iframe title="email-body" srcDoc={selectedFull.html} className="w-full border-0" style={{ minHeight: "400px" }} sandbox="" />
+                  <iframe
+                    title="email-body"
+                    srcDoc={`<html><head><meta charset="utf-8"><style>html,body{background:#fff;color:#000;margin:0;padding:0;}</style></head><body>${selectedFull.html}</body></html>`}
+                    className="w-full border-0 bg-white"
+                    style={{ minHeight: "400px" }}
+                    sandbox=""
+                  />
                 ) : (
                   <pre className="whitespace-pre-wrap text-sm">{selectedFull.text || "(vide)"}</pre>
                 )}
