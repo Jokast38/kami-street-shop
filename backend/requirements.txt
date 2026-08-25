@@ -65,6 +65,7 @@ numpy==2.4.6
 num2words==0.5.14
 oauthlib==3.3.1
 openai==1.99.9
+openpyxl==3.1.5
 packaging==26.2
 pandas==3.0.3
 passlib==1.7.4

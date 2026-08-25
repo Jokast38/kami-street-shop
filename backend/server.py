@@ -31,6 +31,7 @@ import bcrypt
 import jwt
 import httpx
 import stripe
+import pandas as pd
 from slugify import slugify
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
@@ -280,6 +281,12 @@ class BannerIn(BaseModel):
     cta_link: str = "/shop"
     active: bool = True
     order: int = 0
+
+
+class CampaignIn(BaseModel):
+    name: str
+    subject: str
+    html: str
 
 
 class CartItem(BaseModel):
@@ -1646,6 +1653,234 @@ async def compose_email(body: ComposeEmailIn, user=Depends(current_staff)):
     if status_code >= 400:
         raise HTTPException(502, f"Échec de l'envoi: {detail[:200]}")
     return {"ok": True}
+
+
+# ----------------------------- Admin: Email Campaigns -----------------------------
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _pick_column(columns: List[str], keywords: List[str]) -> Optional[str]:
+    for col in columns:
+        low = str(col).strip().lower()
+        if any(k in low for k in keywords):
+            return col
+    return None
+
+
+async def _campaign_with_counts(camp: dict) -> dict:
+    cid = camp["id"]
+    total = await db.campaign_leads.count_documents({"campaign_id": cid})
+    sent = await db.campaign_leads.count_documents({"campaign_id": cid, "status": "sent"})
+    failed = await db.campaign_leads.count_documents({"campaign_id": cid, "status": "failed"})
+    pending = await db.campaign_leads.count_documents({"campaign_id": cid, "status": "pending"})
+    lead_emails = await db.campaign_leads.distinct("email", {"campaign_id": cid})
+    replied = await db.emails.count_documents({"direction": "received", "from_email": {"$in": lead_emails}}) if lead_emails else 0
+    out = clean(camp)
+    out.update(total=total, sent=sent, failed=failed, pending=pending, replied=replied)
+    return out
+
+
+@api.post("/admin/campaigns")
+async def create_campaign(body: CampaignIn, user=Depends(current_staff)):
+    p = body.model_dump()
+    p["id"] = str(uuid.uuid4())
+    p["status"] = "draft"
+    p["created_at"] = now_iso()
+    await db.campaigns.insert_one(p)
+    return await _campaign_with_counts(p)
+
+
+@api.get("/admin/campaigns")
+async def list_campaigns(user=Depends(current_staff)):
+    docs = await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [await _campaign_with_counts(d) for d in docs]
+
+
+@api.get("/admin/campaigns/{cid}")
+async def get_campaign(cid: str, user=Depends(current_staff)):
+    doc = await db.campaigns.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Campagne introuvable")
+    return await _campaign_with_counts(doc)
+
+
+@api.put("/admin/campaigns/{cid}")
+async def update_campaign(cid: str, body: CampaignIn, user=Depends(current_staff)):
+    camp = await db.campaigns.find_one({"id": cid})
+    if not camp:
+        raise HTTPException(404, "Campagne introuvable")
+    if camp.get("status") != "draft":
+        raise HTTPException(400, "Seule une campagne en brouillon peut être modifiée")
+    await db.campaigns.update_one({"id": cid}, {"$set": body.model_dump()})
+    return {"ok": True}
+
+
+@api.delete("/admin/campaigns/{cid}")
+async def delete_campaign(cid: str, user=Depends(current_staff)):
+    await db.campaigns.delete_one({"id": cid})
+    await db.campaign_leads.delete_many({"campaign_id": cid})
+    return {"ok": True}
+
+
+@api.post("/admin/campaigns/{cid}/import")
+async def import_campaign_leads(cid: str, file: UploadFile = File(...), user=Depends(current_staff)):
+    camp = await db.campaigns.find_one({"id": cid})
+    if not camp:
+        raise HTTPException(404, "Campagne introuvable")
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(400, "Fichier vide")
+    filename = (file.filename or "").lower()
+    try:
+        if filename.endswith(".csv") or filename.endswith(".txt"):
+            df = None
+            last_err = None
+            for enc in ("utf-8-sig", "cp1252", "latin-1"):
+                try:
+                    df = pd.read_csv(BytesIO(contents), dtype=str, keep_default_na=False, sep=None, engine="python", encoding=enc)
+                    break
+                except (UnicodeDecodeError, UnicodeError) as e:
+                    last_err = e
+            if df is None:
+                raise last_err
+        else:
+            df = pd.read_excel(BytesIO(contents), dtype=str)
+    except Exception as e:
+        raise HTTPException(400, f"Fichier illisible ({file.filename}): {e}")
+
+    if df.empty or len(df.columns) == 0:
+        raise HTTPException(400, "Le fichier ne contient aucune donnée exploitable")
+
+    columns = list(df.columns)
+    email_col = _pick_column(columns, ["email", "mail", "courriel"])
+    name_col = _pick_column(columns, ["nom", "name", "contact", "raison_sociale"])
+    type_col = _pick_column(columns, ["type_structure", "type"])
+    postal_col = _pick_column(columns, ["code_postal", "cp", "postal"])
+    city_col = _pick_column(columns, ["ville", "city"])
+    address_col = _pick_column(columns, ["adresse", "address"])
+    website_col = _pick_column(columns, ["site_web", "website", "site internet", "web"])
+    siret_col = _pick_column(columns, ["siret"])
+    phone_col = _pick_column(columns, ["telephone", "téléphone", "tel", "phone"])
+    if not email_col:
+        raise HTTPException(400, "Aucune colonne email détectée dans le fichier")
+
+    def val(row, col):
+        return str(row.get(col, "")).strip() if col else ""
+
+    existing = set(await db.campaign_leads.distinct("email", {"campaign_id": cid}))
+    to_insert = []
+    skipped = 0
+    for _, row in df.iterrows():
+        email = str(row.get(email_col, "")).strip().lower()
+        if not email or not EMAIL_RE.match(email) or email in existing:
+            skipped += 1
+            continue
+        existing.add(email)
+        nom = val(row, name_col)
+        to_insert.append({
+            "id": str(uuid.uuid4()),
+            "campaign_id": cid,
+            "email": email,
+            "name": nom,
+            "association": nom,
+            "type_structure": val(row, type_col),
+            "postal_code": val(row, postal_col),
+            "city": val(row, city_col),
+            "address": val(row, address_col),
+            "website": val(row, website_col),
+            "siret": val(row, siret_col),
+            "phone": val(row, phone_col),
+            "status": "pending",
+            "error": "",
+            "sent_at": None,
+        })
+
+    if to_insert:
+        await db.campaign_leads.insert_many(to_insert)
+    return {"imported": len(to_insert), "skipped": skipped}
+
+
+class CampaignLeadIn(BaseModel):
+    email: EmailStr
+    name: str = ""
+    association: str = ""
+    type_structure: str = ""
+    postal_code: str = ""
+    city: str = ""
+    address: str = ""
+    website: str = ""
+    siret: str = ""
+    phone: str = ""
+
+
+@api.post("/admin/campaigns/{cid}/leads")
+async def add_campaign_lead(cid: str, body: CampaignLeadIn, user=Depends(current_staff)):
+    camp = await db.campaigns.find_one({"id": cid})
+    if not camp:
+        raise HTTPException(404, "Campagne introuvable")
+    email = body.email.strip().lower()
+    if await db.campaign_leads.find_one({"campaign_id": cid, "email": email}):
+        raise HTTPException(400, "Ce contact existe déjà dans la campagne")
+    lead = body.model_dump()
+    lead["email"] = email
+    lead["id"] = str(uuid.uuid4())
+    lead["campaign_id"] = cid
+    lead["status"] = "pending"
+    lead["error"] = ""
+    lead["sent_at"] = None
+    await db.campaign_leads.insert_one(lead)
+    return clean(lead)
+
+
+@api.get("/admin/campaigns/{cid}/leads")
+async def list_campaign_leads(cid: str, user=Depends(current_staff)):
+    leads = await db.campaign_leads.find({"campaign_id": cid}, {"_id": 0}).sort("email", 1).to_list(10000)
+    emails = [l["email"] for l in leads]
+    replied_emails = set(await db.emails.distinct("from_email", {"direction": "received", "from_email": {"$in": emails}})) if emails else set()
+    for l in leads:
+        l["replied"] = l["email"] in replied_emails
+    return leads
+
+
+@api.delete("/admin/campaigns/{cid}/leads/{lead_id}")
+async def delete_campaign_lead(cid: str, lead_id: str, user=Depends(current_staff)):
+    await db.campaign_leads.delete_one({"id": lead_id, "campaign_id": cid})
+    return {"ok": True}
+
+
+async def _run_campaign_send(cid: str):
+    camp = await db.campaigns.find_one({"id": cid})
+    if not camp:
+        return
+    leads = await db.campaign_leads.find({"campaign_id": cid, "status": "pending"}).to_list(10000)
+    for lead in leads:
+        name = lead.get("name") or ""
+        association = lead.get("association") or ""
+        subject = camp["subject"].replace("{{name}}", name).replace("{{association}}", association)
+        body_html = camp["html"].replace("{{name}}", name).replace("{{association}}", association)
+        html_body = email_template(subject, body_html)
+        status_code, detail = await send_email(
+            lead["email"], name, subject, html_body, category="campaign"
+        )
+        if status_code < 400:
+            await db.campaign_leads.update_one({"id": lead["id"]}, {"$set": {"status": "sent", "sent_at": now_iso(), "error": ""}})
+        else:
+            await db.campaign_leads.update_one({"id": lead["id"]}, {"$set": {"status": "failed", "error": detail[:300]}})
+        await asyncio.sleep(2)
+    await db.campaigns.update_one({"id": cid}, {"$set": {"status": "done"}})
+
+
+@api.post("/admin/campaigns/{cid}/send")
+async def send_campaign(cid: str, user=Depends(current_staff)):
+    camp = await db.campaigns.find_one({"id": cid})
+    if not camp:
+        raise HTTPException(404, "Campagne introuvable")
+    pending = await db.campaign_leads.count_documents({"campaign_id": cid, "status": "pending"})
+    if pending == 0:
+        raise HTTPException(400, "Aucun destinataire en attente d'envoi")
+    await db.campaigns.update_one({"id": cid}, {"$set": {"status": "sending"}})
+    asyncio.create_task(_run_campaign_send(cid))
+    return {"ok": True, "queued": pending}
 
 
 @api.get("/admin/stats")

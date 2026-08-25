@@ -98,6 +98,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="invoices" data-testid="tab-invoices" className="shrink-0">Factures</TabsTrigger>
             <TabsTrigger value="promos" data-testid="tab-promos" className="shrink-0">Codes promo</TabsTrigger>
             <TabsTrigger value="mailbox" data-testid="tab-mailbox" className="shrink-0">Messagerie</TabsTrigger>
+            <TabsTrigger value="campaigns" data-testid="tab-campaigns" className="shrink-0">Campagnes</TabsTrigger>
             {isAdmin && <TabsTrigger value="collaborators" data-testid="tab-collaborators" className="shrink-0">Collaborateurs</TabsTrigger>}
           </TabsList>
 
@@ -126,6 +127,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="mailbox" className="mt-6">
             <MailboxPanel authAxios={authAxios} />
+          </TabsContent>
+          <TabsContent value="campaigns" className="mt-6">
+            <CampaignsPanel authAxios={authAxios} />
           </TabsContent>
           {isAdmin && (
             <TabsContent value="collaborators" className="mt-6">
@@ -1205,6 +1209,324 @@ function MailboxPanel({ authAxios }) {
             <div><Label>Message</Label><Textarea rows={8} value={compose.body} onChange={e => setCompose({ ...compose, body: e.target.value })} /></div>
             <Button onClick={send} disabled={sending || !compose.to_email || !compose.subject} className="cta-primary rounded-none w-full">
               {sending ? "Envoi..." : "Envoyer"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const FLYER_TEMPLATE = {
+  subject: "KamiSTREET x {{association}} — vélos électriques et mobilité douce en famille",
+  html: `
+<div style="font-family:Arial,sans-serif">
+  <p>Bonjour {{name}},</p>
+  <p>Nous sommes <strong>KamiSTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine, et nous accompagnons les familles et associations comme <strong>{{association}}</strong> dans leurs projets de mobilité douce.</p>
+
+  <div style="background:#0E1B2E;color:#ffffff;padding:14px 18px;font-weight:bold;font-size:16px;margin:20px 0 0">
+    DES SOLUTIONS ADAPTÉES À VOS BESOINS
+  </div>
+  <div style="background:#C4E86B;color:#0E1B2E;padding:14px 18px;font-weight:bold;font-size:15px;margin:0 0 20px">
+    Vélos à assistance électrique — modèles individuels et familiaux
+  </div>
+
+  <img src="https://kamistreet.fr/asso-mail-banner-1.png" alt="Apprentissage, Autonomie, Mobilité, Lien familial" width="100%" style="display:block;width:100%;max-width:600px;height:auto;margin:0 0 20px">
+
+  <div style="background:#F4A93A;color:#0E1B2E;padding:14px 18px;margin-bottom:20px">
+    <strong>💰 Des financements peuvent être mobilisés</strong><br>
+    CAF · Département · CNAV · Région
+  </div>
+
+  <p>Nous serions ravis d'échanger avec vous sur un accompagnement adapté aux besoins de vos adhérents : essais en magasin, tarifs associations, modèles familiaux (cargo, pliants) et solutions de financement.</p>
+  <p>N'hésitez pas à répondre à cet email ou à nous appeler pour en discuter.</p>
+
+  <p style="margin-top:24px">
+    <strong>KamiSTREET</strong><br>
+    59 avenue Joffre – 93800 Épinay-sur-Seine<br>
+    TikTok : @kami_street_
+  </p>
+</div>`.trim(),
+};
+
+function CampaignsPanel({ authAxios }) {
+  const [campaigns, setCampaigns] = useState([]);
+  const [open, setOpen] = useState(false);
+  const emptyForm = { name: "", subject: "", html: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [selected, setSelected] = useState(null);
+  const [leads, setLeads] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const emptyLead = { email: "", name: "", association: "", city: "", phone: "" };
+  const [leadForm, setLeadForm] = useState(emptyLead);
+  const [addingLead, setAddingLead] = useState(false);
+
+  const load = useCallback(() => {
+    authAxios.get("/admin/campaigns").then(r => setCampaigns(r.data)).catch(() => {});
+  }, [authAxios]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const loadLeads = useCallback((cid) => {
+    authAxios.get(`/admin/campaigns/${cid}/leads`).then(r => setLeads(r.data)).catch(() => {});
+  }, [authAxios]);
+
+  const openCampaign = (c) => { setSelected(c); loadLeads(c.id); setLeadForm(emptyLead); };
+
+  const useFlyerTemplate = () => setForm(f => ({ ...f, subject: FLYER_TEMPLATE.subject, html: FLYER_TEMPLATE.html }));
+
+  const addLead = async () => {
+    if (!selected || !leadForm.email) return;
+    setAddingLead(true);
+    try {
+      await authAxios.post(`/admin/campaigns/${selected.id}/leads`, leadForm);
+      toast.success("Contact ajouté");
+      setLeadForm(emptyLead);
+      load(); loadLeads(selected.id);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur d'ajout");
+    } finally { setAddingLead(false); }
+  };
+
+  const delLead = async (leadId) => {
+    if (!selected) return;
+    await authAxios.delete(`/admin/campaigns/${selected.id}/leads/${leadId}`);
+    load(); loadLeads(selected.id);
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    if (selected.status !== "sending") return;
+    const t = setInterval(() => {
+      authAxios.get(`/admin/campaigns/${selected.id}`).then(r => {
+        setSelected(r.data);
+        setCampaigns(prev => prev.map(c => c.id === r.data.id ? r.data : c));
+      }).catch(() => {});
+      loadLeads(selected.id);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [selected, authAxios, loadLeads]);
+
+  const create = async () => {
+    try {
+      await authAxios.post("/admin/campaigns", form);
+      toast.success("Campagne créée");
+      setOpen(false); setForm(emptyForm); load();
+    } catch { toast.error("Erreur"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("Supprimer cette campagne et ses destinataires ?")) return;
+    await authAxios.delete(`/admin/campaigns/${id}`);
+    if (selected?.id === id) setSelected(null);
+    toast.success("Supprimé"); load();
+  };
+
+  const importFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selected) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await authAxios.post(`/admin/campaigns/${selected.id}/import`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`${data.imported} contact(s) importé(s), ${data.skipped} ignoré(s)`);
+      load(); loadLeads(selected.id);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur d'import");
+    } finally { setImporting(false); e.target.value = ""; }
+  };
+
+  const launchSend = async () => {
+    if (!selected) return;
+    if (!confirm(`Envoyer cette campagne à ${selected.pending} destinataire(s) en attente ?`)) return;
+    setSending(true);
+    try {
+      await authAxios.post(`/admin/campaigns/${selected.id}/send`);
+      toast.success("Envoi lancé");
+      const { data } = await authAxios.get(`/admin/campaigns/${selected.id}`);
+      setSelected(data);
+      setCampaigns(prev => prev.map(c => c.id === data.id ? data : c));
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur au lancement");
+    } finally { setSending(false); }
+  };
+
+  const STATUS_LABELS = { draft: "Brouillon", sending: "Envoi en cours", done: "Terminée" };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="display text-xl font-bold">Campagnes email ({campaigns.length})</h2>
+        <Button onClick={() => { setForm(emptyForm); setOpen(true); }} className="cta-primary rounded-none" data-testid="campaign-new-btn">
+          <Plus className="w-4 h-4 mr-2" />Nouvelle campagne
+        </Button>
+      </div>
+
+      <div className="grid md:grid-cols-[300px_1fr] gap-4">
+        <div className="border border-border overflow-y-auto max-h-[600px]">
+          {campaigns.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">Aucune campagne</div>
+          ) : campaigns.map(c => (
+            <button
+              key={c.id}
+              onClick={() => openCampaign(c)}
+              data-testid={`campaign-item-${c.id}`}
+              className={`w-full text-left p-3 border-b border-border transition-colors ${selected?.id === c.id ? "bg-accent/10" : "hover:bg-secondary"}`}
+            >
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-sm font-semibold truncate">{c.name}</span>
+                <span className="text-[10px] uppercase text-muted-foreground shrink-0">{STATUS_LABELS[c.status] || c.status}</span>
+              </div>
+              <div className="text-xs text-muted-foreground truncate mt-0.5">{c.subject}</div>
+              <div className="text-[10px] mt-1 text-muted-foreground">
+                {c.sent}/{c.total} envoyés {c.failed > 0 && `· ${c.failed} échecs`} {c.replied > 0 && `· ${c.replied} réponses`}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4 border border-border">
+          {!selected ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Sélectionnez une campagne</div>
+          ) : (
+            <div>
+              <div className="flex justify-between items-start mb-4 gap-3 flex-wrap">
+                <div>
+                  <h3 className="font-bold text-lg">{selected.name}</h3>
+                  <p className="text-xs text-muted-foreground">{selected.subject}</p>
+                </div>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <label>
+                    <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={importFile} disabled={importing} data-testid="campaign-import-input" />
+                    <span className={`inline-flex items-center gap-2 px-3 py-2 border border-border text-xs cursor-pointer hover:bg-secondary ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+                      <Users className="w-3 h-3" />{importing ? "Import..." : "Importer CSV / Excel"}
+                    </span>
+                  </label>
+                  <Button
+                    size="sm"
+                    className="cta-primary rounded-none"
+                    onClick={launchSend}
+                    disabled={sending || selected.status === "sending" || (selected.pending || 0) === 0}
+                    data-testid="campaign-send-btn"
+                  >
+                    <Send className="w-3 h-3 mr-2" />
+                    {selected.status === "sending" ? "Envoi en cours..." : `Lancer l'envoi (${selected.pending || 0})`}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => del(selected.id)} title="Supprimer"><Trash2 className="w-4 h-4" /></Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="border border-border p-2 text-center">
+                  <div className="text-lg font-black">{selected.total || 0}</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Contacts</div>
+                </div>
+                <div className="border border-border p-2 text-center">
+                  <div className="text-lg font-black text-accent">{selected.sent || 0}</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Envoyés</div>
+                </div>
+                <div className="border border-border p-2 text-center">
+                  <div className="text-lg font-black text-red-500">{selected.failed || 0}</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Échecs</div>
+                </div>
+                <div className="border border-border p-2 text-center">
+                  <div className="text-lg font-black text-green-600">{selected.replied || 0}</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Réponses</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-end gap-2 mb-4 border border-border p-3">
+                <div className="flex-1 min-w-[160px]">
+                  <Label className="text-xs">Email</Label>
+                  <Input type="email" value={leadForm.email} onChange={e => setLeadForm({ ...leadForm, email: e.target.value })} className="h-8" data-testid="campaign-lead-email-input" />
+                </div>
+                <div className="flex-1 min-w-[120px]">
+                  <Label className="text-xs">Nom</Label>
+                  <Input value={leadForm.name} onChange={e => setLeadForm({ ...leadForm, name: e.target.value })} className="h-8" />
+                </div>
+                <div className="flex-1 min-w-[140px]">
+                  <Label className="text-xs">Nom association / structure</Label>
+                  <Input value={leadForm.association} onChange={e => setLeadForm({ ...leadForm, association: e.target.value, name: e.target.value })} className="h-8" />
+                </div>
+                <div className="flex-1 min-w-[100px]">
+                  <Label className="text-xs">Ville</Label>
+                  <Input value={leadForm.city} onChange={e => setLeadForm({ ...leadForm, city: e.target.value })} className="h-8" />
+                </div>
+                <div className="flex-1 min-w-[110px]">
+                  <Label className="text-xs">Téléphone</Label>
+                  <Input value={leadForm.phone} onChange={e => setLeadForm({ ...leadForm, phone: e.target.value })} className="h-8" />
+                </div>
+                <Button size="sm" className="cta-primary rounded-none h-8" onClick={addLead} disabled={addingLead || !leadForm.email} data-testid="campaign-add-lead-btn">
+                  <Plus className="w-3 h-3 mr-1" />Ajouter
+                </Button>
+              </div>
+
+              <div className="border border-border overflow-y-auto max-h-[360px]">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-secondary">
+                    <tr>
+                      <th className="text-left p-2">Email</th>
+                      <th className="text-left p-2">Association / Structure</th>
+                      <th className="text-left p-2">Type</th>
+                      <th className="text-left p-2">Ville</th>
+                      <th className="text-left p-2">Téléphone</th>
+                      <th className="text-left p-2">Statut</th>
+                      <th className="text-left p-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leads.length === 0 ? (
+                      <tr><td colSpan={7} className="p-4 text-center text-muted-foreground text-xs">Aucun contact — importez un fichier ou ajoutez-en un manuellement ci-dessus</td></tr>
+                    ) : leads.map(l => (
+                      <tr key={l.id} className="border-t border-border" data-testid={`campaign-lead-${l.id}`}>
+                        <td className="p-2 truncate max-w-[180px]">{l.email}</td>
+                        <td className="p-2 truncate max-w-[160px]">{l.association || l.name}</td>
+                        <td className="p-2 truncate max-w-[100px]">{l.type_structure}</td>
+                        <td className="p-2 truncate max-w-[100px]">{l.city}</td>
+                        <td className="p-2 truncate max-w-[110px]">{l.phone}</td>
+                        <td className="p-2">
+                          {l.replied ? (
+                            <span className="text-[10px] uppercase text-green-600 font-semibold">Répondu</span>
+                          ) : l.status === "sent" ? (
+                            <span className="text-[10px] uppercase text-accent">Envoyé</span>
+                          ) : l.status === "failed" ? (
+                            <span className="text-[10px] uppercase text-red-500">Échec</span>
+                          ) : (
+                            <span className="text-[10px] uppercase text-muted-foreground">En attente</span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => delLead(l.id)} title="Retirer">
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Nouvelle campagne</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Nom (interne)</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: Associations - rentrée 2026" /></div>
+            <Button type="button" variant="outline" size="sm" className="rounded-none" onClick={useFlyerTemplate} data-testid="campaign-use-flyer-template-btn">
+              Utiliser le modèle du flyer associations
+            </Button>
+            <div><Label>Objet de l'email</Label><Input value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} /></div>
+            <div>
+              <Label>Message (HTML autorisé, variables {"{{name}}"} et {"{{association}}"})</Label>
+              <Textarea rows={10} value={form.html} onChange={e => setForm({ ...form, html: e.target.value })} />
+            </div>
+            <Button onClick={create} disabled={!form.name || !form.subject || !form.html} className="cta-primary rounded-none w-full">
+              Créer la campagne
             </Button>
           </div>
         </DialogContent>
