@@ -1217,36 +1217,170 @@ function MailboxPanel({ authAxios }) {
   );
 }
 
+// Brand palette (matches --accent / --foreground in index.css): lime #D9FF33, near-black #0F0F10.
+const buildFlyerTemplateHtml = () => `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KamiSTREET x {{association}}</title>
+<style>
+  body { margin:0; padding:0; background-color:#F4F5F2; font-family:Arial,Helvetica,sans-serif; color:#0F0F10; }
+  table { border-spacing:0; border-collapse:collapse; }
+  img { border:0; display:block; max-width:100%; }
+  a { text-decoration:none; }
+  .container { width:100%; max-width:640px; margin:0 auto; background:#ffffff; }
+  .lime { color:#8C9E12; }
+  .button { display:inline-block; background-color:#D9FF33; color:#0F0F10 !important; padding:15px 28px; border-radius:4px; font-size:16px; font-weight:bold; }
+  @media screen and (max-width:600px) {
+    .container { width:100% !important; }
+    .mobile-padding { padding-left:20px !important; padding-right:20px !important; }
+    .hero-title { font-size:28px !important; line-height:34px !important; }
+    .benefit { display:block !important; width:100% !important; margin-bottom:15px; }
+  }
+</style>
+</head>
+<body>
+<table width="100%" bgcolor="#F4F5F2"><tr><td align="center">
+<table class="container" width="640">
+
+  <!-- HEADER -->
+  <tr><td align="center" style="padding:30px 25px 20px;">
+    <a href="https://kamistreet.fr">
+      <img src="https://kamistreet.fr/logo/04-logo-kamistreet.jpg" width="180" alt="KamiSTREET" style="margin:0 auto;border-radius:6px;">
+    </a>
+    <p style="margin:10px 0 0;font-size:13px;color:#8C9E12;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em;">
+      Vos projets de mobilité douce
+    </p>
+  </td></tr>
+
+  <!-- HERO -->
+  <tr><td style="padding:0 20px;">
+    <table width="100%" style="border-radius:12px;overflow:hidden;background:#F1FBD9;">
+      <tr>
+        <td width="46%" valign="middle" style="padding:30px 20px 30px 28px;">
+          <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#0F0F10;">KamiSTREET ×</p>
+          <h1 class="hero-title" style="margin:0;font-size:30px;line-height:36px;color:#0F0F10;">{{association}}</h1>
+          <p style="margin:16px 0 0;font-size:17px;line-height:25px;color:#0F0F10;font-weight:bold;">
+            Des solutions de mobilité douce pour vos adhérents
+          </p>
+        </td>
+        <td width="54%" valign="middle">
+          <img src="https://kamistreet.fr/logo/01-photo-famille-cargo.jpg" width="350" alt="Mobilité douce en famille" style="width:100%;height:auto;">
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- INTRO -->
+  <tr><td class="mobile-padding" style="padding:32px 40px 15px;font-size:15px;line-height:25px;color:#333333;">
+    <p style="margin:0 0 16px;">Bonjour <strong>{{name}}</strong>,</p>
+    <p style="margin:0 0 16px;">Nous sommes <strong>KamiSTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine.</p>
+    <p style="margin:0;">Nous accompagnons les <strong>associations et leurs adhérents</strong> dans leurs projets de mobilité douce, avec des solutions adaptées aux besoins de chacun.</p>
+  </td></tr>
+
+  <!-- TITRE SOLUTIONS -->
+  <tr><td style="padding:20px 20px 0;">
+    <table width="100%" style="background:#0F0F10;border-radius:8px 8px 0 0;">
+      <tr><td align="center" style="padding:14px 10px;color:#ffffff;font-size:18px;font-weight:bold;">
+        DES SOLUTIONS ADAPTÉES À VOS BESOINS
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- SOLUTIONS -->
+  <tr><td style="padding:0 20px;">
+    <table width="100%" style="background:#D9FF33;border-radius:0 0 8px 8px;">
+      <tr>
+        <td width="42%" valign="top" style="padding:20px 12px 20px 20px;">
+          <img src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="240" alt="Vélos électriques KamiSTREET en boutique" style="width:100%;border-radius:6px;margin:0 0 10px;">
+          <img src="https://kamistreet.fr/logo/03-velos-pliants.jpg" width="240" alt="Vélos pliants électriques KamiSTREET" style="width:100%;border-radius:6px;">
+        </td>
+        <td width="58%" valign="middle" style="padding:20px 25px 20px 8px;">
+          <p style="margin:0 0 6px;font-size:19px;line-height:24px;font-weight:bold;color:#0F0F10;">VÉLOS À ASSISTANCE ÉLECTRIQUE</p>
+          <p style="margin:0 0 14px;font-size:14px;line-height:22px;font-weight:bold;color:#0F0F10;">Modèles individuels et familiaux</p>
+          <p style="margin:0;font-size:13px;line-height:23px;color:#0F0F10;">
+            Modèles individuels<br>
+            Modèles familiaux<br>
+            Vélos cargo<br>
+            Vélos pliants
+          </p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- BENEFICES -->
+  <tr><td style="padding:22px 20px 5px;">
+    <img src="https://kamistreet.fr/asso-mail-banner-1.png" width="600" alt="Apprentissage, Autonomie, Mobilité, Lien familial" style="width:100%;height:auto;border-radius:8px;">
+  </td></tr>
+
+  <!-- FINANCEMENT -->
+  <tr><td style="padding:18px 20px;">
+    <table width="100%" style="background:#F5B800;border-radius:8px;">
+      <tr><td align="center" style="padding:18px;">
+        <p style="margin:0 0 8px;font-size:18px;font-weight:bold;color:#0F0F10;">DES FINANCEMENTS PEUVENT ÊTRE MOBILISÉS</p>
+        <p style="margin:0;display:inline-block;padding:9px 18px;background:#0F0F10;border-radius:4px;color:#ffffff;font-size:14px;font-weight:bold;">
+          CAF &nbsp;•&nbsp; DÉPARTEMENT &nbsp;•&nbsp; CNAV &nbsp;•&nbsp; RÉGION
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- MESSAGE PARTENARIAT -->
+  <tr><td class="mobile-padding" style="padding:18px 40px;font-size:15px;line-height:25px;color:#333333;">
+    <p style="margin:0 0 14px;font-size:18px;font-weight:bold;color:#0F0F10;">Un projet pour vos adhérents ?</p>
+    <p style="margin:0 0 14px;">Nous serions ravis d'échanger avec vous sur un accompagnement adapté aux besoins de {{association}} :</p>
+    <ul style="padding-left:20px;margin:0;">
+      <li style="margin-bottom:6px;">Essais en magasin</li>
+      <li style="margin-bottom:6px;">Tarifs adaptés aux associations</li>
+      <li style="margin-bottom:6px;">Modèles familiaux et cargo</li>
+      <li style="margin-bottom:6px;">Vélos pliants</li>
+      <li>Accompagnement sur les solutions de financement</li>
+    </ul>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td align="center" style="padding:12px 30px 36px;">
+    <p style="margin:0 0 18px;font-size:16px;font-weight:bold;color:#0F0F10;">Échangeons ensemble sur votre projet.</p>
+    <a href="mailto:contact@kamistreet.fr" class="button">RÉPONDRE À CET EMAIL</a>
+  </td></tr>
+
+  <!-- FOOTER -->
+  <tr><td style="padding:0 20px 24px;">
+    <table width="100%" style="background:#0F0F10;border-radius:10px;">
+      <tr>
+        <td width="50%" style="padding:22px;">
+          <img src="https://kamistreet.fr/logo/kami-street-black.png" width="150" alt="KamiSTREET" style="filter:brightness(0) invert(1);">
+          <table style="margin:14px 0 0;"><tr>
+            <td valign="top" style="padding-right:6px;"><img src="https://kamistreet.fr/logo/favicon-koala.png" width="16" alt="" style="filter:brightness(0) invert(1);margin-top:2px;"></td>
+            <td style="color:#ffffff;font-size:13px;line-height:21px;">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
+          </tr></table>
+        </td>
+        <td width="50%" valign="middle" style="padding:22px;color:#ffffff;font-size:13px;">
+          <p style="margin:0 0 8px;font-weight:bold;font-size:15px;">Suivez-nous</p>
+          <p style="margin:0 0 14px;">TikTok : <a href="https://www.tiktok.com/@kami_street_" style="color:#D9FF33;">@kami_street_</a></p>
+          <a href="https://kamistreet.fr" style="display:inline-block;color:#ffffff;border:1px solid #D9FF33;padding:7px 14px;border-radius:4px;">kamistreet.fr</a>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- FOOTER LEGAL -->
+  <tr><td align="center" style="padding:0 25px 28px;font-size:11px;line-height:18px;color:#888888;">
+    <p style="margin:0 0 5px;">Cet email vous a été envoyé par KamiSTREET.</p>
+    <p style="margin:0;">Vous ne souhaitez plus recevoir nos emails ? <a href="mailto:contact@kamistreet.fr?subject=Désinscription" style="color:#777777;text-decoration:underline;">Cliquez ici pour vous désinscrire.</a></p>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body>
+</html>`.trim();
+
 const FLYER_TEMPLATE = {
   subject: "KamiSTREET x {{association}} — vélos électriques et mobilité douce en famille",
-  html: `
-<div style="font-family:Arial,sans-serif">
-  <p>Bonjour {{name}},</p>
-  <p>Nous sommes <strong>KamiSTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine, et nous accompagnons les familles et associations comme <strong>{{association}}</strong> dans leurs projets de mobilité douce.</p>
-
-  <div style="background:#0E1B2E;color:#ffffff;padding:14px 18px;font-weight:bold;font-size:16px;margin:20px 0 0">
-    DES SOLUTIONS ADAPTÉES À VOS BESOINS
-  </div>
-  <div style="background:#C4E86B;color:#0E1B2E;padding:14px 18px;font-weight:bold;font-size:15px;margin:0 0 20px">
-    Vélos à assistance électrique — modèles individuels et familiaux
-  </div>
-
-  <img src="https://kamistreet.fr/asso-mail-banner-1.png" alt="Apprentissage, Autonomie, Mobilité, Lien familial" width="100%" style="display:block;width:100%;max-width:600px;height:auto;margin:0 0 20px">
-
-  <div style="background:#F4A93A;color:#0E1B2E;padding:14px 18px;margin-bottom:20px">
-    <strong>💰 Des financements peuvent être mobilisés</strong><br>
-    CAF · Département · CNAV · Région
-  </div>
-
-  <p>Nous serions ravis d'échanger avec vous sur un accompagnement adapté aux besoins de vos adhérents : essais en magasin, tarifs associations, modèles familiaux (cargo, pliants) et solutions de financement.</p>
-  <p>N'hésitez pas à répondre à cet email ou à nous appeler pour en discuter.</p>
-
-  <p style="margin-top:24px">
-    <strong>KamiSTREET</strong><br>
-    59 avenue Joffre – 93800 Épinay-sur-Seine<br>
-    TikTok : @kami_street_
-  </p>
-</div>`.trim(),
+  html: buildFlyerTemplateHtml(),
 };
 
 function CampaignsPanel({ authAxios }) {
@@ -1522,7 +1656,7 @@ function CampaignsPanel({ authAxios }) {
             </Button>
             <div><Label>Objet de l'email</Label><Input value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} /></div>
             <div>
-              <Label>Message (HTML autorisé, variables {"{{name}}"} et {"{{association}}"})</Label>
+              <Label>Email complet (HTML autonome — logo, mise en page, pied de page inclus. Variables {"{{name}}"} et {"{{association}}"})</Label>
               <Textarea rows={10} value={form.html} onChange={e => setForm({ ...form, html: e.target.value })} />
             </div>
             <Button onClick={create} disabled={!form.name || !form.subject || !form.html} className="cta-primary rounded-none w-full">

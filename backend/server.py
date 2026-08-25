@@ -1857,8 +1857,7 @@ async def _run_campaign_send(cid: str):
         name = lead.get("name") or ""
         association = lead.get("association") or ""
         subject = camp["subject"].replace("{{name}}", name).replace("{{association}}", association)
-        body_html = camp["html"].replace("{{name}}", name).replace("{{association}}", association)
-        html_body = email_template(subject, body_html)
+        html_body = camp["html"].replace("{{name}}", name).replace("{{association}}", association)
         status_code, detail = await send_email(
             lead["email"], name, subject, html_body, category="campaign"
         )
