@@ -1224,7 +1224,7 @@ const buildFlyerTemplateHtml = () => `
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KamiSTREET x {{association}}</title>
+<title>KAMISTREET x {{association}}</title>
 <style>
   body { margin:0; padding:0; background-color:#F4F5F2; font-family:Arial,Helvetica,sans-serif; color:#0F0F10; }
   table { border-spacing:0; border-collapse:collapse; }
@@ -1248,7 +1248,10 @@ const buildFlyerTemplateHtml = () => `
   <!-- HEADER -->
   <tr><td align="center" style="padding:30px 25px 20px;">
     <a href="https://kamistreet.fr">
-      <img src="https://kamistreet.fr/logo/04-logo-kamistreet.jpg" width="180" alt="KamiSTREET" style="margin:0 auto;border-radius:6px;">
+      <table style="margin:0 auto;"><tr>
+        <td valign="middle"><img src="https://kamistreet.fr/logo/logo-kamistreet-VERT-Plan-de-travail.jpg" width="56" alt="KAMI STREET" style="border-radius:8px;"></td>
+        <td valign="middle" style="padding-left:12px;font-size:34px;font-weight:900;color:#0F0F10;letter-spacing:0.02em;">KAMI STREET</td>
+      </tr></table>
     </a>
     <p style="margin:10px 0 0;font-size:13px;color:#8C9E12;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em;">
       Vos projets de mobilité douce
@@ -1260,14 +1263,14 @@ const buildFlyerTemplateHtml = () => `
     <table width="100%" style="border-radius:12px;overflow:hidden;background:#F1FBD9;">
       <tr>
         <td width="46%" valign="middle" style="padding:30px 20px 30px 28px;">
-          <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#0F0F10;">KamiSTREET ×</p>
+          <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#0F0F10;">KAMISTREET ×</p>
           <h1 class="hero-title" style="margin:0;font-size:30px;line-height:36px;color:#0F0F10;">{{association}}</h1>
           <p style="margin:16px 0 0;font-size:17px;line-height:25px;color:#0F0F10;font-weight:bold;">
             Des solutions de mobilité douce pour vos adhérents
           </p>
         </td>
         <td width="54%" valign="middle">
-          <img src="https://kamistreet.fr/logo/01-photo-famille-cargo.jpg" width="350" alt="Mobilité douce en famille" style="width:100%;height:auto;">
+          <img src="https://lime-aardvark-343643.hostingersite.com/wp-content/uploads/2026/06/Velo-electrique-Jobobike-Transer.webp" width="350" alt="Mobilité douce en famille" style="width:100%;height:auto;">
         </td>
       </tr>
     </table>
@@ -1276,7 +1279,7 @@ const buildFlyerTemplateHtml = () => `
   <!-- INTRO -->
   <tr><td class="mobile-padding" style="padding:32px 40px 15px;font-size:15px;line-height:25px;color:#333333;">
     <p style="margin:0 0 16px;">Bonjour <strong>{{name}}</strong>,</p>
-    <p style="margin:0 0 16px;">Nous sommes <strong>KamiSTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine.</p>
+    <p style="margin:0 0 16px;">Nous sommes <strong>KAMISTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine.</p>
     <p style="margin:0;">Nous accompagnons les <strong>associations et leurs adhérents</strong> dans leurs projets de mobilité douce, avec des solutions adaptées aux besoins de chacun.</p>
   </td></tr>
 
@@ -1294,18 +1297,35 @@ const buildFlyerTemplateHtml = () => `
     <table width="100%" style="background:#D9FF33;border-radius:0 0 8px 8px;">
       <tr>
         <td width="42%" valign="top" style="padding:20px 12px 20px 20px;">
-          <img src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="240" alt="Vélos électriques KamiSTREET en boutique" style="width:100%;border-radius:6px;margin:0 0 10px;">
-          <img src="https://kamistreet.fr/logo/03-velos-pliants.jpg" width="240" alt="Vélos pliants électriques KamiSTREET" style="width:100%;border-radius:6px;">
+          <img src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="240" alt="Vélos électriques KAMISTREET en boutique" style="width:100%;border-radius:6px;margin:0 0 10px;">
+          <img src="https://kamistreet.fr/logo/03-velos-pliants.jpg" width="240" alt="Vélos pliants électriques KAMISTREET" style="width:100%;border-radius:6px;">
         </td>
-        <td width="58%" valign="middle" style="padding:20px 25px 20px 8px;">
-          <p style="margin:0 0 6px;font-size:19px;line-height:24px;font-weight:bold;color:#0F0F10;">VÉLOS À ASSISTANCE ÉLECTRIQUE</p>
-          <p style="margin:0 0 14px;font-size:14px;line-height:22px;font-weight:bold;color:#0F0F10;">Modèles individuels et familiaux</p>
-          <p style="margin:0;font-size:13px;line-height:23px;color:#0F0F10;">
-            Modèles individuels<br>
-            Modèles familiaux<br>
-            Vélos cargo<br>
-            Vélos pliants
-          </p>
+        <td width="58%" valign="middle" style="padding:20px 20px 20px 8px;">
+          <table width="100%" style="background:#ffffff;border-radius:8px;">
+            <tr><td style="padding:22px 22px 18px;">
+              <p style="margin:0 0 4px;font-size:19px;line-height:23px;font-weight:900;color:#0F0F10;">VÉLOS À ASSISTANCE ÉLECTRIQUE</p>
+              <p style="margin:0 0 4px;width:40px;height:3px;line-height:3px;font-size:0;background:#D9FF33;">&nbsp;</p>
+              <p style="margin:10px 0 16px;font-size:13px;line-height:20px;font-weight:bold;color:#5A6B0A;text-transform:uppercase;letter-spacing:0.03em;">Modèles individuels et familiaux</p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
+                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
+                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Modèles individuels</td>
+                </tr></table></td></tr>
+                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
+                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
+                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Modèles familiaux</td>
+                </tr></table></td></tr>
+                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
+                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
+                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Vélos cargo</td>
+                </tr></table></td></tr>
+                <tr><td><table cellpadding="0" cellspacing="0"><tr>
+                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
+                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Vélos pliants</td>
+                </tr></table></td></tr>
+              </table>
+            </td></tr>
+          </table>
         </td>
       </tr>
     </table>
@@ -1352,7 +1372,7 @@ const buildFlyerTemplateHtml = () => `
     <table width="100%" style="background:#0F0F10;border-radius:10px;">
       <tr>
         <td width="50%" style="padding:22px;">
-          <img src="https://kamistreet.fr/logo/kami-street-black.png" width="150" alt="KamiSTREET" style="filter:brightness(0) invert(1);">
+          <img src="https://kamistreet.fr/logo/kami-street-black.png" width="150" alt="KAMISTREET" style="filter:brightness(0) invert(1);">
           <table style="margin:14px 0 0;"><tr>
             <td valign="top" style="padding-right:6px;"><img src="https://kamistreet.fr/logo/favicon-koala.png" width="16" alt="" style="filter:brightness(0) invert(1);margin-top:2px;"></td>
             <td style="color:#ffffff;font-size:13px;line-height:21px;">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
@@ -1369,7 +1389,7 @@ const buildFlyerTemplateHtml = () => `
 
   <!-- FOOTER LEGAL -->
   <tr><td align="center" style="padding:0 25px 28px;font-size:11px;line-height:18px;color:#888888;">
-    <p style="margin:0 0 5px;">Cet email vous a été envoyé par KamiSTREET.</p>
+    <p style="margin:0 0 5px;">Cet email vous a été envoyé par KAMISTREET.</p>
     <p style="margin:0;">Vous ne souhaitez plus recevoir nos emails ? <a href="mailto:contact@kamistreet.fr?subject=Désinscription" style="color:#777777;text-decoration:underline;">Cliquez ici pour vous désinscrire.</a></p>
   </td></tr>
 
@@ -1379,7 +1399,7 @@ const buildFlyerTemplateHtml = () => `
 </html>`.trim();
 
 const FLYER_TEMPLATE = {
-  subject: "KamiSTREET x {{association}} — vélos électriques et mobilité douce en famille",
+  subject: "KAMISTREET x {{association}} — vélos électriques et mobilité douce en famille",
   html: buildFlyerTemplateHtml(),
 };
 
