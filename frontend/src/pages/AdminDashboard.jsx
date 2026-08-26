@@ -1778,6 +1778,12 @@ function MarketingPanel({ authAxios }) {
     } finally { setFindingId(null); }
   };
 
+  const delProspect = async (p) => {
+    if (!confirm(`Supprimer ${p.domain} de la liste de prospects ?`)) return;
+    setProspects(prev => prev.filter(x => x.id !== p.id));
+    try { await authAxios.delete(`/admin/backlinks/${p.id}`); toast.success("Supprimé"); } catch { toast.error("Erreur de suppression"); loadProspects(); }
+  };
+
   const findAllEmails = async () => {
     setFindingAll(true);
     try {
@@ -1902,9 +1908,14 @@ function MarketingPanel({ authAxios }) {
                   </td>
                   <td className="p-2 text-xs uppercase">{BACKLINK_STATUS_LABELS[p.status] || p.status}</td>
                   <td className="p-2">
-                    <Button size="sm" className="cta-primary rounded-none h-7 text-xs" onClick={() => openRequestDialog(p)} data-testid={`backlink-request-btn-${p.id}`}>
-                      <Send className="w-3 h-3 mr-1" />Demande
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" className="cta-primary rounded-none h-7 text-xs" onClick={() => openRequestDialog(p)} data-testid={`backlink-request-btn-${p.id}`}>
+                        <Send className="w-3 h-3 mr-1" />Demande
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => delProspect(p)} title="Supprimer" data-testid={`backlink-delete-btn-${p.id}`}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
