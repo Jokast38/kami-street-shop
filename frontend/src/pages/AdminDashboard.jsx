@@ -1720,6 +1720,8 @@ function MarketingPanel({ authAxios }) {
   const emptyReqForm = { email: "", keywords: "", price: 150, currency: "EUR", target_url: "https://kamistreet.fr/shop" };
   const [reqForm, setReqForm] = useState(emptyReqForm);
   const [sendingReq, setSendingReq] = useState(false);
+  const [findingId, setFindingId] = useState(null);
+  const [findingAll, setFindingAll] = useState(false);
 
   const loadProspects = useCallback(() => {
     authAxios.get("/admin/backlinks").then(r => setProspects(r.data)).catch(() => {});
@@ -1759,6 +1761,32 @@ function MarketingPanel({ authAxios }) {
   const updateProspect = async (p, patch) => {
     setProspects(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } : x));
     try { await authAxios.put(`/admin/backlinks/${p.id}`, patch); } catch { toast.error("Erreur de mise à jour"); }
+  };
+
+  const findEmail = async (p) => {
+    setFindingId(p.id);
+    try {
+      const { data } = await authAxios.post(`/admin/backlinks/${p.id}/find-email`);
+      if (data.candidates?.length) {
+        setProspects(prev => prev.map(x => x.id === p.id ? { ...x, email: data.candidates[0] } : x));
+        toast.success(data.candidates.length > 1 ? `Email trouvé (+${data.candidates.length - 1} autre(s) possible(s))` : "Email trouvé");
+      } else {
+        toast.error("Aucun email trouvé sur ce site");
+      }
+    } catch {
+      toast.error("Erreur de recherche");
+    } finally { setFindingId(null); }
+  };
+
+  const findAllEmails = async () => {
+    setFindingAll(true);
+    try {
+      const { data } = await authAxios.post("/admin/backlinks/find-emails");
+      toast.success(`${data.found} email(s) trouvé(s) sur ${data.checked} vérifié(s)`);
+      loadProspects();
+    } catch {
+      toast.error("Erreur de recherche");
+    } finally { setFindingAll(false); }
   };
 
   const openRequestDialog = (p) => {
@@ -1814,6 +1842,9 @@ function MarketingPanel({ authAxios }) {
                 <RefreshCw className={`w-3 h-3 mr-2 ${importing ? "animate-spin" : ""}`} />
                 {importing ? "..." : "Actualiser"}
               </Button>
+              <Button size="sm" variant="outline" className="rounded-none" onClick={findAllEmails} disabled={findingAll} title="Cherche automatiquement l'email de contact des prospects qui n'en ont pas" data-testid="backlinks-find-all-btn">
+                {findingAll ? "Recherche..." : "Rechercher les emails manquants"}
+              </Button>
             </>
           )}
         </div>
@@ -1847,14 +1878,27 @@ function MarketingPanel({ authAxios }) {
                   <td className="p-2">{p.backlinks}</td>
                   <td className="p-2">{p.traffic}</td>
                   <td className="p-2">
-                    <Input
-                      type="email"
-                      value={p.email || ""}
-                      onChange={e => setProspects(prev => prev.map(x => x.id === p.id ? { ...x, email: e.target.value } : x))}
-                      onBlur={e => updateProspect(p, { email: e.target.value })}
-                      className="h-7 w-40 text-xs"
-                      placeholder="contact@..."
-                    />
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="email"
+                        value={p.email || ""}
+                        onChange={e => setProspects(prev => prev.map(x => x.id === p.id ? { ...x, email: e.target.value } : x))}
+                        onBlur={e => updateProspect(p, { email: e.target.value })}
+                        className="h-7 w-36 text-xs"
+                        placeholder="contact@..."
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => findEmail(p)}
+                        disabled={findingId === p.id}
+                        title="Rechercher l'email sur le site"
+                        data-testid={`backlink-find-email-btn-${p.id}`}
+                      >
+                        <RefreshCw className={`w-3 h-3 ${findingId === p.id ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
                   </td>
                   <td className="p-2 text-xs uppercase">{BACKLINK_STATUS_LABELS[p.status] || p.status}</td>
                   <td className="p-2">

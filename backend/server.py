@@ -2008,6 +2008,81 @@ async def list_backlinks(user=Depends(current_staff)):
     return docs
 
 
+EMAIL_FINDER_REGEX = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+EMAIL_FINDER_PATHS = ["", "/contact", "/contact-us", "/nous-contacter", "/mentions-legales", "/about", "/about-us"]
+EMAIL_FINDER_JUNK_SUBSTR = [
+    "sentry", "wixpress", "godaddy", "cloudflare", "example.com", "yourdomain",
+    "schema.org", "w3.org", "gstatic", "googleapis", "@2x", "@3x",
+]
+EMAIL_FINDER_JUNK_EXT = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
+EMAIL_FINDER_PRIORITY_PREFIXES = ("contact", "info", "hello", "bonjour", "contact.fr", "redaction", "contact-fr")
+
+
+def _extract_emails(html_text: str) -> List[str]:
+    found = set()
+    for m in EMAIL_FINDER_REGEX.findall(html_text):
+        low = m.lower()
+        if any(j in low for j in EMAIL_FINDER_JUNK_SUBSTR) or low.endswith(EMAIL_FINDER_JUNK_EXT):
+            continue
+        found.add(low)
+    return list(found)
+
+
+async def _find_domain_emails(domain: str) -> List[str]:
+    candidates: List[str] = []
+    seen = set()
+    async with httpx.AsyncClient(timeout=8, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (KamiStreet-Outreach/1.0)"}) as c:
+        for path in EMAIL_FINDER_PATHS:
+            for scheme in ("https", "http"):
+                try:
+                    r = await c.get(f"{scheme}://{domain}{path}")
+                    if r.status_code < 400 and r.text:
+                        for e in _extract_emails(r.text):
+                            if e not in seen:
+                                seen.add(e)
+                                candidates.append(e)
+                    break  # scheme worked (or returned an error page) — don't retry http after https succeeded/failed cleanly
+                except Exception:
+                    continue
+            if len(candidates) >= 5:
+                break
+
+    def rank(e: str) -> int:
+        local = e.split("@")[0]
+        return 0 if local.startswith(EMAIL_FINDER_PRIORITY_PREFIXES) else 1
+
+    candidates.sort(key=rank)
+    return candidates[:5]
+
+
+@api.post("/admin/backlinks/{pid}/find-email")
+async def find_backlink_email(pid: str, user=Depends(current_staff)):
+    prospect = await db.backlink_prospects.find_one({"id": pid})
+    if not prospect:
+        raise HTTPException(404, "Prospect introuvable")
+    candidates = await _find_domain_emails(prospect["domain"])
+    if candidates:
+        await db.backlink_prospects.update_one({"id": pid}, {"$set": {"email": candidates[0]}})
+    return {"candidates": candidates}
+
+
+@api.post("/admin/backlinks/find-emails")
+async def find_backlink_emails_bulk(user=Depends(current_staff)):
+    prospects = await db.backlink_prospects.find({"$or": [{"email": ""}, {"email": {"$exists": False}}]}).to_list(1000)
+    sem = asyncio.Semaphore(5)
+
+    async def process(p):
+        async with sem:
+            candidates = await _find_domain_emails(p["domain"])
+            if candidates:
+                await db.backlink_prospects.update_one({"id": p["id"]}, {"$set": {"email": candidates[0]}})
+            return bool(candidates)
+
+    results = await asyncio.gather(*[process(p) for p in prospects], return_exceptions=True)
+    found = sum(1 for r in results if r is True)
+    return {"checked": len(prospects), "found": found}
+
+
 @api.put("/admin/backlinks/{pid}")
 async def update_backlink(pid: str, body: BacklinkProspectUpdate, user=Depends(current_staff)):
     patch = {k: v for k, v in body.model_dump().items() if v is not None}
