@@ -289,6 +289,27 @@ class CampaignIn(BaseModel):
     html: str
 
 
+class BacklinkProspectUpdate(BaseModel):
+    email: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class BacklinkRequestIn(BaseModel):
+    email: EmailStr
+    keywords: List[str] = []
+    price: float = 0
+    currency: str = "EUR"
+    target_url: str = "https://kamistreet.fr/shop"
+    subject: str = ""
+    message: str = ""
+
+
+class BacklinkRequestStatusIn(BaseModel):
+    status: str
+
+
 class CartItem(BaseModel):
     product_id: str
     variation_id: Optional[str] = None
@@ -1659,9 +1680,14 @@ async def compose_email(body: ComposeEmailIn, user=Depends(current_staff)):
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def _strip_accents(s: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
+
 def _pick_column(columns: List[str], keywords: List[str]) -> Optional[str]:
     for col in columns:
-        low = str(col).strip().lower()
+        low = _strip_accents(str(col).strip().lower())
         if any(k in low for k in keywords):
             return col
     return None
@@ -1880,6 +1906,192 @@ async def send_campaign(cid: str, user=Depends(current_staff)):
     await db.campaigns.update_one({"id": cid}, {"$set": {"status": "sending"}})
     asyncio.create_task(_run_campaign_send(cid))
     return {"ok": True, "queued": pending}
+
+
+# ----------------------------- Admin: Netlinking (backlinks) -----------------------------
+BACKLINK_PRIORITY_ORDER = {"haute": 0, "moyenne": 1, "basse": 2}
+
+
+def _backlink_sort_key(doc: dict):
+    return (BACKLINK_PRIORITY_ORDER.get(_strip_accents((doc.get("priority") or "").lower()), 9), doc.get("domain") or "")
+
+
+@api.post("/admin/backlinks/import")
+async def import_backlinks(file: UploadFile = File(None), user=Depends(current_staff)):
+    """Imports (or re-syncs) the netlinking prospect list.
+    - With a file: parses the uploaded CSV/Excel (any list of backlink prospects).
+    - Without a file: re-pulls the default report (frontend/public/linking/fatbike_backlink.xlsx).
+    Upserts by domain either way, so existing email/status/notes are preserved."""
+    if file is not None:
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(400, "Fichier vide")
+        filename = (file.filename or "").lower()
+        try:
+            if filename.endswith(".csv") or filename.endswith(".txt"):
+                df = None
+                last_err = None
+                for enc in ("utf-8-sig", "cp1252", "latin-1"):
+                    try:
+                        df = pd.read_csv(BytesIO(contents), dtype=str, keep_default_na=False, sep=None, engine="python", encoding=enc)
+                        break
+                    except (UnicodeDecodeError, UnicodeError) as e:
+                        last_err = e
+                if df is None:
+                    raise last_err
+            else:
+                df = pd.read_excel(BytesIO(contents), dtype=str)
+        except Exception as e:
+            raise HTTPException(400, f"Fichier illisible ({file.filename}): {e}")
+    else:
+        url = f"https://{COMPANY_LEGAL['site']}/linking/fatbike_backlink.xlsx"
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c:
+            r = await c.get(url)
+            if r.status_code >= 400:
+                raise HTTPException(502, f"Impossible de récupérer le fichier ({r.status_code})")
+            contents = r.content
+        try:
+            df = pd.read_excel(BytesIO(contents), dtype=str)
+        except Exception as e:
+            raise HTTPException(400, f"Fichier illisible: {e}")
+
+    columns = list(df.columns)
+    priority_col = _pick_column(columns, ["priorite"])
+    domain_col = _pick_column(columns, ["domaine", "domain"])
+    url_col = _pick_column(columns, ["page", "url"])
+    type_col = _pick_column(columns, ["type"])
+    backlinks_col = _pick_column(columns, ["backlink"])
+    traffic_col = _pick_column(columns, ["trafic", "traffic"])
+    status_col = _pick_column(columns, ["statut", "status"])
+    if not domain_col:
+        raise HTTPException(400, "Aucune colonne domaine détectée dans le fichier")
+
+    def val(row, col):
+        return str(row.get(col, "")).strip() if col else ""
+
+    imported, updated = 0, 0
+    for _, row in df.iterrows():
+        domain = val(row, domain_col).lower()
+        if not domain:
+            continue
+        existing = await db.backlink_prospects.find_one({"domain": domain})
+        data = {
+            "domain": domain,
+            "priority": val(row, priority_col) or "Moyenne",
+            "page_url": val(row, url_col),
+            "site_type": val(row, type_col),
+            "backlinks": val(row, backlinks_col),
+            "traffic": val(row, traffic_col),
+            "source_status": val(row, status_col),
+        }
+        if existing:
+            await db.backlink_prospects.update_one({"id": existing["id"]}, {"$set": data})
+            updated += 1
+        else:
+            data.update({
+                "id": str(uuid.uuid4()),
+                "email": "",
+                "status": "a_contacter",
+                "notes": "",
+                "created_at": now_iso(),
+            })
+            await db.backlink_prospects.insert_one(data)
+            imported += 1
+
+    return {"imported": imported, "updated": updated}
+
+
+@api.get("/admin/backlinks")
+async def list_backlinks(user=Depends(current_staff)):
+    docs = await db.backlink_prospects.find({}, {"_id": 0}).to_list(1000)
+    docs.sort(key=_backlink_sort_key)
+    return docs
+
+
+@api.put("/admin/backlinks/{pid}")
+async def update_backlink(pid: str, body: BacklinkProspectUpdate, user=Depends(current_staff)):
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        return {"ok": True}
+    r = await db.backlink_prospects.update_one({"id": pid}, {"$set": patch})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Prospect introuvable")
+    return {"ok": True}
+
+
+@api.delete("/admin/backlinks/{pid}")
+async def delete_backlink(pid: str, user=Depends(current_staff)):
+    await db.backlink_prospects.delete_one({"id": pid})
+    return {"ok": True}
+
+
+def _backlink_request_email(domain: str, keywords: List[str], price: float, currency: str, target_url: str) -> str:
+    kw_html = "".join(f"<li>{k}</li>" for k in keywords) if keywords else "<li>à définir ensemble</li>"
+    price_txt = f"{price:.0f} {currency}" if price else "à discuter"
+    body = f"""
+    <p>Bonjour,</p>
+    <p>Je me permets de vous contacter au nom de <strong>KamiSTREET</strong>, spécialiste des fatbikes et vélos électriques (Épinay-sur-Seine, France — <a href="https://kamistreet.fr">kamistreet.fr</a>).</p>
+    <p>Votre site <strong>{html.escape(domain)}</strong> correspond bien à notre thématique, et nous souhaiterions vous proposer un partenariat de netlinking : l'ajout d'un lien vers notre site depuis l'une de vos pages, avec l'un des ancrages suivants :</p>
+    <ul>{kw_html}</ul>
+    <p>Lien à intégrer : <a href="{html.escape(target_url)}">{html.escape(target_url)}</a></p>
+    <p>Nous proposons une rémunération de <strong>{price_txt}</strong> pour cet emplacement. N'hésitez pas à nous indiquer si cette offre vous convient ou si vous avez d'autres conditions.</p>
+    <p>Au plaisir d'échanger avec vous,<br>L'équipe KamiSTREET</p>
+    """
+    return body.strip()
+
+
+@api.post("/admin/backlinks/{pid}/request")
+async def send_backlink_request(pid: str, body: BacklinkRequestIn, user=Depends(current_staff)):
+    prospect = await db.backlink_prospects.find_one({"id": pid})
+    if not prospect:
+        raise HTTPException(404, "Prospect introuvable")
+
+    subject = body.subject or f"Proposition de partenariat backlink — KamiSTREET x {prospect['domain']}"
+    body_html = body.message or _backlink_request_email(prospect["domain"], body.keywords, body.price, body.currency, body.target_url)
+    html_body = email_template(subject, body_html)
+
+    status_code, detail = await send_email(body.email, "", subject, html_body, category="backlink")
+
+    req = {
+        "id": str(uuid.uuid4()),
+        "prospect_id": pid,
+        "domain": prospect["domain"],
+        "to_email": body.email,
+        "keywords": body.keywords,
+        "price": body.price,
+        "currency": body.currency,
+        "target_url": body.target_url,
+        "subject": subject,
+        "status": "sent" if status_code < 400 else "failed",
+        "error": "" if status_code < 400 else detail[:300],
+        "created_at": now_iso(),
+    }
+    await db.backlink_requests.insert_one(req)
+
+    if status_code < 400:
+        await db.backlink_prospects.update_one({"id": pid}, {"$set": {"email": body.email, "status": "contacte"}})
+    else:
+        raise HTTPException(502, f"Échec de l'envoi: {detail[:200]}")
+
+    return clean(req)
+
+
+@api.get("/admin/backlinks/requests")
+async def list_backlink_requests(user=Depends(current_staff)):
+    reqs = await db.backlink_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    emails = [r["to_email"] for r in reqs]
+    replied_emails = set(await db.emails.distinct("from_email", {"direction": "received", "from_email": {"$in": emails}})) if emails else set()
+    for r in reqs:
+        r["replied"] = r["to_email"] in replied_emails
+    return reqs
+
+
+@api.put("/admin/backlinks/requests/{rid}/status")
+async def update_backlink_request_status(rid: str, body: BacklinkRequestStatusIn, user=Depends(current_staff)):
+    r = await db.backlink_requests.update_one({"id": rid}, {"$set": {"status": body.status}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Demande introuvable")
+    return {"ok": True}
 
 
 @api.get("/admin/stats")

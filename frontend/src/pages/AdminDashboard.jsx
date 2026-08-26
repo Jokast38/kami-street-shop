@@ -99,6 +99,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="promos" data-testid="tab-promos" className="shrink-0">Codes promo</TabsTrigger>
             <TabsTrigger value="mailbox" data-testid="tab-mailbox" className="shrink-0">Messagerie</TabsTrigger>
             <TabsTrigger value="campaigns" data-testid="tab-campaigns" className="shrink-0">Campagnes</TabsTrigger>
+            <TabsTrigger value="marketing" data-testid="tab-marketing" className="shrink-0">Marketing</TabsTrigger>
             {isAdmin && <TabsTrigger value="collaborators" data-testid="tab-collaborators" className="shrink-0">Collaborateurs</TabsTrigger>}
           </TabsList>
 
@@ -130,6 +131,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="campaigns" className="mt-6">
             <CampaignsPanel authAxios={authAxios} />
+          </TabsContent>
+          <TabsContent value="marketing" className="mt-6">
+            <MarketingPanel authAxios={authAxios} />
           </TabsContent>
           {isAdmin && (
             <TabsContent value="collaborators" className="mt-6">
@@ -1681,6 +1685,246 @@ function CampaignsPanel({ authAxios }) {
             </div>
             <Button onClick={create} disabled={!form.name || !form.subject || !form.html} className="cta-primary rounded-none w-full">
               Créer la campagne
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const BACKLINK_STATUS_LABELS = {
+  a_contacter: "À contacter",
+  a_verifier: "À vérifier",
+  contacte: "Contacté",
+};
+const BACKLINK_PRIORITY_COLORS = {
+  Haute: "text-red-500",
+  Moyenne: "text-accent",
+  Basse: "text-muted-foreground",
+};
+const REQUEST_STATUS_LABELS = {
+  sent: "Envoyée",
+  failed: "Échec",
+  accepted: "Acceptée",
+  rejected: "Refusée",
+  negotiating: "En négociation",
+};
+
+function MarketingPanel({ authAxios }) {
+  const [view, setView] = useState("prospects");
+  const [prospects, setProspects] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [requestDialog, setRequestDialog] = useState(null);
+  const emptyReqForm = { email: "", keywords: "", price: 150, currency: "EUR", target_url: "https://kamistreet.fr/shop" };
+  const [reqForm, setReqForm] = useState(emptyReqForm);
+  const [sendingReq, setSendingReq] = useState(false);
+
+  const loadProspects = useCallback(() => {
+    authAxios.get("/admin/backlinks").then(r => setProspects(r.data)).catch(() => {});
+  }, [authAxios]);
+  const loadRequests = useCallback(() => {
+    authAxios.get("/admin/backlinks/requests").then(r => setRequests(r.data)).catch(() => {});
+  }, [authAxios]);
+
+  useEffect(() => { loadProspects(); loadRequests(); }, [loadProspects, loadRequests]);
+
+  const doRefresh = async () => {
+    setImporting(true);
+    try {
+      const { data } = await authAxios.post("/admin/backlinks/import");
+      toast.success(`${data.imported} nouveau(x), ${data.updated} mis à jour`);
+      loadProspects();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur d'actualisation");
+    } finally { setImporting(false); }
+  };
+
+  const doImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await authAxios.post("/admin/backlinks/import", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`${data.imported} nouveau(x), ${data.updated} mis à jour`);
+      loadProspects();
+    } catch (e2) {
+      toast.error(e2?.response?.data?.detail || "Erreur d'import");
+    } finally { setImporting(false); e.target.value = ""; }
+  };
+
+  const updateProspect = async (p, patch) => {
+    setProspects(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } : x));
+    try { await authAxios.put(`/admin/backlinks/${p.id}`, patch); } catch { toast.error("Erreur de mise à jour"); }
+  };
+
+  const openRequestDialog = (p) => {
+    setRequestDialog(p);
+    setReqForm({ ...emptyReqForm, email: p.email || "" });
+  };
+
+  const sendRequest = async () => {
+    if (!requestDialog || !reqForm.email) return;
+    setSendingReq(true);
+    try {
+      const keywords = reqForm.keywords.split(",").map(k => k.trim()).filter(Boolean);
+      await authAxios.post(`/admin/backlinks/${requestDialog.id}/request`, {
+        email: reqForm.email,
+        keywords,
+        price: Number(reqForm.price) || 0,
+        currency: reqForm.currency,
+        target_url: reqForm.target_url,
+      });
+      toast.success("Demande envoyée");
+      setRequestDialog(null);
+      loadProspects(); loadRequests();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur d'envoi");
+    } finally { setSendingReq(false); }
+  };
+
+  const updateRequestStatus = async (r, status) => {
+    setRequests(prev => prev.map(x => x.id === r.id ? { ...x, status } : x));
+    try { await authAxios.put(`/admin/backlinks/requests/${r.id}/status`, { status }); } catch { toast.error("Erreur"); }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+        <h2 className="display text-xl font-bold">Netlinking (achat de backlinks)</h2>
+        <div className="flex gap-2">
+          <Button size="sm" variant={view === "prospects" ? "default" : "outline"} className={`rounded-none ${view === "prospects" ? "cta-primary" : ""}`} onClick={() => setView("prospects")}>
+            Prospects ({prospects.length})
+          </Button>
+          <Button size="sm" variant={view === "requests" ? "default" : "outline"} className={`rounded-none ${view === "requests" ? "cta-primary" : ""}`} onClick={() => setView("requests")}>
+            Demandes envoyées ({requests.length})
+          </Button>
+          {view === "prospects" && (
+            <>
+              <label>
+                <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={doImportFile} disabled={importing} data-testid="backlinks-import-input" />
+                <span className={`inline-flex items-center gap-2 px-3 py-2 border border-border text-xs cursor-pointer hover:bg-secondary ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+                  <Users className="w-3 h-3" />Importer un fichier
+                </span>
+              </label>
+              <Button size="sm" variant="outline" className="rounded-none" onClick={doRefresh} disabled={importing} title="Recharge le fichier par défaut (fatbike_backlink.xlsx) pour mettre à jour les métriques" data-testid="backlinks-refresh-btn">
+                <RefreshCw className={`w-3 h-3 mr-2 ${importing ? "animate-spin" : ""}`} />
+                {importing ? "..." : "Actualiser"}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {view === "prospects" ? (
+        <div className="border border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary">
+              <tr>
+                <th className="text-left p-2">Priorité</th>
+                <th className="text-left p-2">Domaine</th>
+                <th className="text-left p-2">Type</th>
+                <th className="text-left p-2">Backlinks</th>
+                <th className="text-left p-2">Trafic</th>
+                <th className="text-left p-2">Email contact</th>
+                <th className="text-left p-2">Statut</th>
+                <th className="text-left p-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {prospects.length === 0 ? (
+                <tr><td colSpan={8} className="p-6 text-center text-muted-foreground text-xs">Aucun prospect — importe un fichier ou clique sur "Actualiser" pour charger la liste par défaut</td></tr>
+              ) : prospects.map(p => (
+                <tr key={p.id} className="border-t border-border" data-testid={`backlink-item-${p.id}`}>
+                  <td className={`p-2 font-semibold ${BACKLINK_PRIORITY_COLORS[p.priority] || ""}`}>{p.priority}</td>
+                  <td className="p-2">
+                    <a href={p.page_url} target="_blank" rel="noreferrer" className="hover:text-accent truncate block max-w-[160px]">{p.domain}</a>
+                  </td>
+                  <td className="p-2 truncate max-w-[140px]">{p.site_type}</td>
+                  <td className="p-2">{p.backlinks}</td>
+                  <td className="p-2">{p.traffic}</td>
+                  <td className="p-2">
+                    <Input
+                      type="email"
+                      value={p.email || ""}
+                      onChange={e => setProspects(prev => prev.map(x => x.id === p.id ? { ...x, email: e.target.value } : x))}
+                      onBlur={e => updateProspect(p, { email: e.target.value })}
+                      className="h-7 w-40 text-xs"
+                      placeholder="contact@..."
+                    />
+                  </td>
+                  <td className="p-2 text-xs uppercase">{BACKLINK_STATUS_LABELS[p.status] || p.status}</td>
+                  <td className="p-2">
+                    <Button size="sm" className="cta-primary rounded-none h-7 text-xs" onClick={() => openRequestDialog(p)} data-testid={`backlink-request-btn-${p.id}`}>
+                      <Send className="w-3 h-3 mr-1" />Demande
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="border border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary">
+              <tr>
+                <th className="text-left p-2">Domaine</th>
+                <th className="text-left p-2">Email</th>
+                <th className="text-left p-2">Mots-clés</th>
+                <th className="text-left p-2">Prix proposé</th>
+                <th className="text-left p-2">Date</th>
+                <th className="text-left p-2">Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.length === 0 ? (
+                <tr><td colSpan={6} className="p-6 text-center text-muted-foreground text-xs">Aucune demande envoyée</td></tr>
+              ) : requests.map(r => (
+                <tr key={r.id} className="border-t border-border" data-testid={`backlink-request-${r.id}`}>
+                  <td className="p-2 font-semibold">{r.domain}</td>
+                  <td className="p-2 truncate max-w-[160px]">{r.to_email}</td>
+                  <td className="p-2 truncate max-w-[160px]">{(r.keywords || []).join(", ")}</td>
+                  <td className="p-2">{r.price} {r.currency}</td>
+                  <td className="p-2 text-xs text-muted-foreground">{r.created_at ? new Date(r.created_at).toLocaleDateString("fr-FR") : ""}</td>
+                  <td className="p-2">
+                    {r.replied && <span className="text-[10px] uppercase text-green-600 font-semibold mr-2">Répondu</span>}
+                    <select
+                      value={r.status}
+                      onChange={e => updateRequestStatus(r, e.target.value)}
+                      className="text-xs border border-border bg-background rounded-none px-1 py-1"
+                    >
+                      {Object.entries(REQUEST_STATUS_LABELS).map(([k, label]) => (
+                        <option key={k} value={k}>{label}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={!!requestDialog} onOpenChange={(v) => !v && setRequestDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Demande de backlink — {requestDialog?.domain}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Email de contact</Label><Input type="email" value={reqForm.email} onChange={e => setReqForm({ ...reqForm, email: e.target.value })} data-testid="backlink-request-email-input" /></div>
+            <div>
+              <Label>Mots-clés / ancrages proposés (séparés par des virgules)</Label>
+              <Input value={reqForm.keywords} onChange={e => setReqForm({ ...reqForm, keywords: e.target.value })} placeholder="fatbike électrique, vélo cargo électrique" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Prix proposé</Label><Input type="number" value={reqForm.price} onChange={e => setReqForm({ ...reqForm, price: e.target.value })} /></div>
+              <div><Label>Devise</Label><Input value={reqForm.currency} onChange={e => setReqForm({ ...reqForm, currency: e.target.value })} /></div>
+            </div>
+            <div><Label>Lien à insérer</Label><Input value={reqForm.target_url} onChange={e => setReqForm({ ...reqForm, target_url: e.target.value })} /></div>
+            <Button onClick={sendRequest} disabled={sendingReq || !reqForm.email} className="cta-primary rounded-none w-full" data-testid="backlink-request-send-btn">
+              {sendingReq ? "Envoi..." : "Envoyer la demande"}
             </Button>
           </div>
         </DialogContent>
