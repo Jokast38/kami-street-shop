@@ -2105,12 +2105,12 @@ def _backlink_request_email(domain: str, keywords: List[str], price: float, curr
     price_txt = f"{price:.0f} {currency}" if price else "à discuter"
     body = f"""
     <p>Bonjour,</p>
-    <p>Je me permets de vous contacter au nom de <strong>KamiSTREET</strong>, spécialiste des fatbikes et vélos électriques (Épinay-sur-Seine, France — <a href="https://kamistreet.fr">kamistreet.fr</a>).</p>
+    <p>Je me permets de vous contacter au nom de <strong>KAMISTREET</strong>, spécialiste des fatbikes et vélos électriques (Épinay-sur-Seine, France — <a href="https://kamistreet.fr">kamistreet.fr</a>).</p>
     <p>Votre site <strong>{html.escape(domain)}</strong> correspond bien à notre thématique, et nous souhaiterions vous proposer un partenariat de netlinking : l'ajout d'un lien vers notre site depuis l'une de vos pages, avec l'un des ancrages suivants :</p>
     <ul>{kw_html}</ul>
     <p>Lien à intégrer : <a href="{html.escape(target_url)}">{html.escape(target_url)}</a></p>
     <p>Nous proposons une rémunération de <strong>{price_txt}</strong> pour cet emplacement. N'hésitez pas à nous indiquer si cette offre vous convient ou si vous avez d'autres conditions.</p>
-    <p>Au plaisir d'échanger avec vous,<br>L'équipe KamiSTREET</p>
+    <p>Au plaisir d'échanger avec vous,<br>L'équipe KAMISTREET</p>
     """
     return body.strip()
 
@@ -2121,7 +2121,7 @@ async def send_backlink_request(pid: str, body: BacklinkRequestIn, user=Depends(
     if not prospect:
         raise HTTPException(404, "Prospect introuvable")
 
-    subject = body.subject or f"Proposition de partenariat backlink — KamiSTREET x {prospect['domain']}"
+    subject = body.subject or f"Proposition de partenariat backlink — KAMISTREET x {prospect['domain']}"
     body_html = body.message or _backlink_request_email(prospect["domain"], body.keywords, body.price, body.currency, body.target_url)
     html_body = email_template(subject, body_html)
 

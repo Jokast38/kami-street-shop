@@ -1250,17 +1250,17 @@ const buildFlyerTemplateHtml = () => `
       <table role="presentation" class="email" width="680" cellpadding="0" cellspacing="0" border="0" style="width:680px;max-width:680px;background:#f8f6f0;box-shadow:0 14px 42px rgba(20,20,15,.12)">
         <tr><td class="px" style="padding:27px 40px;background:#0b0c0b">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="font-size:25px;line-height:28px;font-weight:300;letter-spacing:7px;color:#fff">KAMI<span style="color:#c6f432">STREET</span></td>
+            <td><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="150" alt="KAMISTREET" style="height:auto;"></td>
             <td align="right" style="font-size:10px;line-height:14px;font-weight:700;letter-spacing:1.8px;color:#c6f432">MOBILITÉ · PROJET · IMPACT</td>
           </tr></table>
         </td></tr>
 
-        <tr><td><img src="https://kamistreet.fr/logo/01-photo-famille-cargo.jpg" width="680" alt="Un groupe intergénérationnel réuni autour de vélos électriques" style="width:100%;max-width:680px;height:auto"></td></tr>
+        <tr><td><img src="https://kamistreet.fr/logo/ban-mail-asso.jpg" width="680" alt="Un moniteur KAMISTREET accompagne une famille lors d'une initiation au vélo électrique" style="width:100%;max-width:680px;height:auto"></td></tr>
 
         <tr><td class="px" style="padding:42px 48px 50px;background:#0b0c0b">
           <p style="margin:0 0 17px;color:#c6f432;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">CENTRES SOCIAUX &amp; EVS</p>
           <h1 class="headline" style="margin:0 0 22px;color:#fff;font-family:Georgia,'Times New Roman',serif;font-size:54px;line-height:56px;font-weight:400;letter-spacing:-1.5px">Faites bouger<br>votre quartier.</h1>
-          <p style="margin:0;max-width:500px;color:#dddcd7;font-size:17px;line-height:28px">Bonjour {{name}},<br><br>KamiSTREET accompagne les structures de proximité qui souhaitent créer des projets vélo et mobilité douce pour leurs <strong style="color:#fff">jeunes, leurs familles et leurs habitants</strong>.</p>
+          <p style="margin:0;max-width:500px;color:#dddcd7;font-size:17px;line-height:28px">Bonjour {{name}},<br><br>KAMISTREET accompagne les structures de proximité qui souhaitent créer des projets vélo et mobilité douce pour leurs <strong style="color:#fff">jeunes, leurs familles et leurs habitants</strong>.</p>
         </td></tr>
 
         <tr><td class="px" align="center" style="padding:48px 38px 30px;background:#f8f6f0">
@@ -1283,7 +1283,7 @@ const buildFlyerTemplateHtml = () => `
 
         <tr><td style="background:#e5e1d8">
           <table role="presentation" class="stack" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td width="45%" valign="middle"><img class="proof-img" src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="306" alt="Vélos électriques KamiSTREET en boutique" style="width:306px;height:auto"></td>
+            <td width="45%" valign="middle"><img class="proof-img" src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="306" alt="Vélos électriques KAMISTREET en boutique" style="width:306px;height:auto"></td>
             <td class="px" width="55%" valign="middle" style="padding:36px 38px">
               <div style="color:#b4dc25;font-family:Georgia,serif;font-size:54px;line-height:30px">"</div>
               <p style="margin:16px 0 13px;color:#111;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">DÉJÀ SUR LE TERRAIN</p>
@@ -1310,7 +1310,7 @@ const buildFlyerTemplateHtml = () => `
 
         <tr><td class="px" style="padding:28px 40px;background:#0b0c0b">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="font-size:15px;letter-spacing:4px;color:#fff">KAMI<span style="color:#c6f432">STREET</span></td>
+            <td><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="100" alt="KAMISTREET" style="height:auto;"></td>
             <td align="right" style="color:#aaa;font-size:10px;line-height:17px">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
           </tr></table>
         </td></tr>
