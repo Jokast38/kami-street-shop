@@ -1223,187 +1223,106 @@ function MailboxPanel({ authAxios }) {
 
 // Brand palette (matches --accent / --foreground in index.css): lime #D9FF33, near-black #0F0F10.
 const buildFlyerTemplateHtml = () => `
-<!DOCTYPE html>
-<html lang="fr">
+<!doctype html>
+<html lang="fr" xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KAMISTREET x {{association}}</title>
-<style>
-  body { margin:0; padding:0; background-color:#F4F5F2; font-family:Arial,Helvetica,sans-serif; color:#0F0F10; }
-  table { border-spacing:0; border-collapse:collapse; }
-  img { border:0; display:block; max-width:100%; }
-  a { text-decoration:none; }
-  .container { width:100%; max-width:640px; margin:0 auto; background:#ffffff; }
-  .lime { color:#8C9E12; }
-  .button { display:inline-block; background-color:#D9FF33; color:#0F0F10 !important; padding:15px 28px; border-radius:4px; font-size:16px; font-weight:bold; }
-  @media screen and (max-width:600px) {
-    .container { width:100% !important; }
-    .mobile-padding { padding-left:20px !important; padding-right:20px !important; }
-    .hero-title { font-size:28px !important; line-height:34px !important; }
-    .benefit { display:block !important; width:100% !important; margin-bottom:15px; }
-  }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <title>KAMISTREET — Faites bouger votre quartier</title>
+  <style>
+    html,body{margin:0!important;padding:0!important;width:100%!important}
+    table,td{border-collapse:collapse!important} img{border:0;display:block;outline:none}
+    a{text-decoration:none} *{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
+    @media screen and (max-width:700px){
+      .email{width:100%!important}.px{padding-left:24px!important;padding-right:24px!important}
+      .headline{font-size:42px!important;line-height:44px!important}.title{font-size:30px!important;line-height:34px!important}
+      .stack,.stack>tbody,.stack>tbody>tr,.stack>tbody>tr>td{display:block!important;width:100%!important;box-sizing:border-box!important}
+      .feature{border-right:0!important;border-bottom:1px solid #d9d7d0!important}.proof-img{width:100%!important;height:auto!important}
+      .center-mobile{text-align:center!important}.cta{display:block!important;text-align:center!important}
+    }
+  </style>
 </head>
-<body>
-<table width="100%" bgcolor="#F4F5F2"><tr><td align="center">
-<table class="container" width="640">
-
-  <!-- HEADER -->
-  <tr><td align="center" style="padding:30px 25px 20px;">
-    <a href="https://kamistreet.fr">
-      <table style="margin:0 auto;"><tr>
-        <td valign="middle"><img src="https://kamistreet.fr/logo/logo-kamistreet-VERT-Plan-de-travail.jpg" width="56" alt="KAMI STREET" style="border-radius:8px;"></td>
-        <td valign="middle" style="padding-left:12px;font-size:34px;font-weight:900;color:#0F0F10;letter-spacing:0.02em;">KAMI STREET</td>
-      </tr></table>
-    </a>
-    <p style="margin:10px 0 0;font-size:13px;color:#8C9E12;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em;">
-      Vos projets de mobilité douce
-    </p>
-  </td></tr>
-
-  <!-- HERO -->
-  <tr><td style="padding:0 20px;">
-    <table width="100%" style="border-radius:12px;overflow:hidden;background:#F1FBD9;">
-      <tr>
-        <td width="46%" valign="middle" style="padding:30px 20px 30px 28px;">
-          <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#0F0F10;">KAMISTREET ×</p>
-          <h1 class="hero-title" style="margin:0;font-size:30px;line-height:36px;color:#0F0F10;">{{association}}</h1>
-          <p style="margin:16px 0 0;font-size:17px;line-height:25px;color:#0F0F10;font-weight:bold;">
-            Des solutions de mobilité douce pour vos adhérents
-          </p>
-        </td>
-        <td width="54%" valign="middle">
-          <img src="https://lime-aardvark-343643.hostingersite.com/wp-content/uploads/2026/06/Velo-electrique-Jobobike-Transer.webp" width="350" alt="Mobilité douce en famille" style="width:100%;height:auto;">
-        </td>
-      </tr>
-    </table>
-  </td></tr>
-
-  <!-- INTRO -->
-  <tr><td class="mobile-padding" style="padding:32px 40px 15px;font-size:15px;line-height:25px;color:#333333;">
-    <p style="margin:0 0 16px;">Bonjour <strong>{{name}}</strong>,</p>
-    <p style="margin:0 0 16px;">Nous sommes <strong>KAMISTREET</strong>, spécialiste des vélos à assistance électrique à Épinay-sur-Seine.</p>
-    <p style="margin:0;">Nous accompagnons les <strong>associations et leurs adhérents</strong> dans leurs projets de mobilité douce, avec des solutions adaptées aux besoins de chacun.</p>
-  </td></tr>
-
-  <!-- TITRE SOLUTIONS -->
-  <tr><td style="padding:20px 20px 0;">
-    <table width="100%" style="background:#0F0F10;border-radius:8px 8px 0 0;">
-      <tr><td align="center" style="padding:14px 10px;color:#ffffff;font-size:18px;font-weight:bold;">
-        DES SOLUTIONS ADAPTÉES À VOS BESOINS
-      </td></tr>
-    </table>
-  </td></tr>
-
-  <!-- SOLUTIONS -->
-  <tr><td style="padding:0 20px;">
-    <table width="100%" style="background:#D9FF33;border-radius:0 0 8px 8px;">
-      <tr>
-        <td width="42%" valign="top" style="padding:20px 12px 20px 20px;">
-          <img src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="240" alt="Vélos électriques KAMISTREET en boutique" style="width:100%;border-radius:6px;margin:0 0 10px;">
-          <img src="https://kamistreet.fr/logo/03-velos-pliants.jpg" width="240" alt="Vélos pliants électriques KAMISTREET" style="width:100%;border-radius:6px;">
-        </td>
-        <td width="58%" valign="middle" style="padding:20px 20px 20px 8px;">
-          <table width="100%" style="background:#ffffff;border-radius:8px;">
-            <tr><td style="padding:22px 22px 18px;">
-              <p style="margin:0 0 4px;font-size:19px;line-height:23px;font-weight:900;color:#0F0F10;">VÉLOS À ASSISTANCE ÉLECTRIQUE</p>
-              <p style="margin:0 0 4px;width:40px;height:3px;line-height:3px;font-size:0;background:#D9FF33;">&nbsp;</p>
-              <p style="margin:10px 0 16px;font-size:13px;line-height:20px;font-weight:bold;color:#5A6B0A;text-transform:uppercase;letter-spacing:0.03em;">Modèles individuels et familiaux</p>
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
-                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
-                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Modèles individuels</td>
-                </tr></table></td></tr>
-                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
-                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
-                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Modèles familiaux</td>
-                </tr></table></td></tr>
-                <tr><td style="padding:0 0 9px;"><table cellpadding="0" cellspacing="0"><tr>
-                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
-                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Vélos cargo</td>
-                </tr></table></td></tr>
-                <tr><td><table cellpadding="0" cellspacing="0"><tr>
-                  <td valign="middle" style="width:18px;height:18px;background:#D9FF33;border-radius:50%;text-align:center;font-size:11px;font-weight:900;color:#0F0F10;line-height:18px;">✓</td>
-                  <td style="padding-left:10px;font-size:13px;color:#0F0F10;">Vélos pliants</td>
-                </tr></table></td></tr>
-              </table>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </td></tr>
-
-  <!-- BENEFICES -->
-  <tr><td style="padding:22px 20px 5px;">
-    <img src="https://kamistreet.fr/asso-mail-banner-1.png" width="600" alt="Apprentissage, Autonomie, Mobilité, Lien familial" style="width:100%;height:auto;border-radius:8px;">
-  </td></tr>
-
-  <!-- FINANCEMENT -->
-  <tr><td style="padding:18px 20px;">
-    <table width="100%" style="background:#F5B800;border-radius:8px;">
-      <tr><td align="center" style="padding:18px;">
-        <p style="margin:0 0 8px;font-size:18px;font-weight:bold;color:#0F0F10;">DES FINANCEMENTS PEUVENT ÊTRE MOBILISÉS</p>
-        <p style="margin:0;display:inline-block;padding:9px 18px;background:#0F0F10;border-radius:4px;color:#ffffff;font-size:14px;font-weight:bold;">
-          CAF &nbsp;•&nbsp; DÉPARTEMENT &nbsp;•&nbsp; CNAV &nbsp;•&nbsp; RÉGION
-        </p>
-      </td></tr>
-    </table>
-  </td></tr>
-
-  <!-- MESSAGE PARTENARIAT -->
-  <tr><td class="mobile-padding" style="padding:18px 40px;font-size:15px;line-height:25px;color:#333333;">
-    <p style="margin:0 0 14px;font-size:18px;font-weight:bold;color:#0F0F10;">Un projet pour vos adhérents ?</p>
-    <p style="margin:0 0 14px;">Nous serions ravis d'échanger avec vous sur un accompagnement adapté aux besoins de {{association}} :</p>
-    <ul style="padding-left:20px;margin:0;">
-      <li style="margin-bottom:6px;">Essais en magasin</li>
-      <li style="margin-bottom:6px;">Tarifs adaptés aux associations</li>
-      <li style="margin-bottom:6px;">Modèles familiaux et cargo</li>
-      <li style="margin-bottom:6px;">Vélos pliants</li>
-      <li>Accompagnement sur les solutions de financement</li>
-    </ul>
-  </td></tr>
-
-  <!-- CTA -->
-  <tr><td align="center" style="padding:12px 30px 36px;">
-    <p style="margin:0 0 18px;font-size:16px;font-weight:bold;color:#0F0F10;">Échangeons ensemble sur votre projet.</p>
-    <a href="mailto:contact@kamistreet.fr" class="button">RÉPONDRE À CET EMAIL</a>
-  </td></tr>
-
-  <!-- FOOTER -->
-  <tr><td style="padding:0 20px 24px;">
-    <table width="100%" style="background:#0F0F10;border-radius:10px;">
-      <tr>
-        <td width="50%" style="padding:22px;">
-          <img src="https://kamistreet.fr/logo/kami-street-black.png" width="150" alt="KAMISTREET" style="filter:brightness(0) invert(1);">
-          <table style="margin:14px 0 0;"><tr>
-            <td valign="top" style="padding-right:6px;"><img src="https://kamistreet.fr/logo/favicon-koala.png" width="16" alt="" style="filter:brightness(0) invert(1);margin-top:2px;"></td>
-            <td style="color:#ffffff;font-size:13px;line-height:21px;">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
+<body style="margin:0;background:#ebe9e2;font-family:Arial,Helvetica,sans-serif;color:#111111">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">Un projet vélo et mobilité douce pensé pour vos publics, votre structure et vos financements.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ebe9e2">
+    <tr><td align="center" style="padding:30px 10px">
+      <table role="presentation" class="email" width="680" cellpadding="0" cellspacing="0" border="0" style="width:680px;max-width:680px;background:#f8f6f0;box-shadow:0 14px 42px rgba(20,20,15,.12)">
+        <tr><td class="px" style="padding:27px 40px;background:#0b0c0b">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="font-size:25px;line-height:28px;font-weight:300;letter-spacing:7px;color:#fff">KAMI<span style="color:#c6f432">STREET</span></td>
+            <td align="right" style="font-size:10px;line-height:14px;font-weight:700;letter-spacing:1.8px;color:#c6f432">MOBILITÉ · PROJET · IMPACT</td>
           </tr></table>
-        </td>
-        <td width="50%" valign="middle" style="padding:22px;color:#ffffff;font-size:13px;">
-          <p style="margin:0 0 8px;font-weight:bold;font-size:15px;">Suivez-nous</p>
-          <p style="margin:0 0 14px;">TikTok : <a href="https://www.tiktok.com/@kami_street_" style="color:#D9FF33;">@kami_street_</a></p>
-          <a href="https://kamistreet.fr" style="display:inline-block;color:#ffffff;border:1px solid #D9FF33;padding:7px 14px;border-radius:4px;">kamistreet.fr</a>
-        </td>
-      </tr>
-    </table>
-  </td></tr>
+        </td></tr>
 
-  <!-- FOOTER LEGAL -->
-  <tr><td align="center" style="padding:0 25px 28px;font-size:11px;line-height:18px;color:#888888;">
-    <p style="margin:0 0 5px;">Cet email vous a été envoyé par KAMISTREET.</p>
-    <p style="margin:0;">Vous ne souhaitez plus recevoir nos emails ? <a href="mailto:contact@kamistreet.fr?subject=Désinscription" style="color:#777777;text-decoration:underline;">Cliquez ici pour vous désinscrire.</a></p>
-  </td></tr>
+        <tr><td><img src="https://kamistreet.fr/logo/01-photo-famille-cargo.jpg" width="680" alt="Un groupe intergénérationnel réuni autour de vélos électriques" style="width:100%;max-width:680px;height:auto"></td></tr>
 
-</table>
-</td></tr></table>
+        <tr><td class="px" style="padding:42px 48px 50px;background:#0b0c0b">
+          <p style="margin:0 0 17px;color:#c6f432;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">CENTRES SOCIAUX &amp; EVS</p>
+          <h1 class="headline" style="margin:0 0 22px;color:#fff;font-family:Georgia,'Times New Roman',serif;font-size:54px;line-height:56px;font-weight:400;letter-spacing:-1.5px">Faites bouger<br>votre quartier.</h1>
+          <p style="margin:0;max-width:500px;color:#dddcd7;font-size:17px;line-height:28px">Bonjour {{name}},<br><br>KamiSTREET accompagne les structures de proximité qui souhaitent créer des projets vélo et mobilité douce pour leurs <strong style="color:#fff">jeunes, leurs familles et leurs habitants</strong>.</p>
+        </td></tr>
+
+        <tr><td class="px" align="center" style="padding:48px 38px 30px;background:#f8f6f0">
+          <p style="margin:0;color:#171717;font-size:12px;line-height:16px;font-weight:700;letter-spacing:3px">UN PROJET, DE L'IDÉE AU TERRAIN</p>
+          <div style="width:38px;height:2px;margin:18px auto 0;background:#c6f432"></div>
+        </td></tr>
+        <tr><td class="px" style="padding:0 38px 52px;background:#f8f6f0">
+          <table role="presentation" class="stack" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td class="feature" width="33.33%" valign="top" align="center" style="padding:18px 20px 24px;border-right:1px solid #d9d7d0">
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">01</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Équipements adaptés</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Vélos électriques, fatbikes et trottinettes sélectionnés selon vos usages.</p>
+            </td>
+            <td class="feature" width="33.33%" valign="top" align="center" style="padding:18px 20px 24px;border-right:1px solid #d9d7d0">
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">02</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Projet sur mesure</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Un accompagnement personnalisé, de l'idée jusqu'à l'acquisition.</p>
+            </td>
+            <td width="33.33%" valign="top" align="center" style="padding:18px 20px 24px">
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">03</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Financements étudiés</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Un devis solide et l'étude des aides mobilisables pour concrétiser le projet.</p>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td style="background:#e5e1d8">
+          <table role="presentation" class="stack" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td width="45%" valign="middle"><img class="proof-img" src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="306" alt="Vélos électriques KamiSTREET en boutique" style="width:306px;height:auto"></td>
+            <td class="px" width="55%" valign="middle" style="padding:36px 38px">
+              <div style="color:#b4dc25;font-family:Georgia,serif;font-size:54px;line-height:30px">"</div>
+              <p style="margin:16px 0 13px;color:#111;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">DÉJÀ SUR LE TERRAIN</p>
+              <p style="margin:0;color:#222;font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:29px;font-style:italic">Nous avons accompagné un centre social de Nanterre dans la mise en place d'un projet d'initiation au vélo, avec l'acquisition de plusieurs équipements.</p>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td class="px" style="padding:26px 42px;background:#c6f432">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td width="58" style="font-family:Georgia,serif;font-size:39px;line-height:42px">€</td>
+            <td style="padding-left:22px;border-left:1px solid #111;font-size:15px;line-height:23px"><strong>CAF · COLLECTIVITÉS · DÉPARTEMENT · RÉGION</strong><br>Nous étudions avec vous les financements adaptés à votre structure.</td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td class="px" align="center" style="padding:52px 48px 58px;background:#f8f6f0">
+          <div style="width:38px;height:2px;margin:0 auto 18px;background:#c6f432"></div>
+          <h2 class="title" style="margin:0 0 13px;font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:43px;font-weight:400">Un projet pour {{association}} ?</h2>
+          <p style="margin:0 auto 27px;max-width:470px;color:#5d5b55;font-size:15px;line-height:24px">Échangeons quelques minutes pour étudier ce que nous pouvons mettre en place au sein de votre structure.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#0b0c0b">
+            <a class="cta" href="mailto:contact@kamistreet.fr" target="_blank" style="display:inline-block;padding:17px 27px;color:#c6f432;font-size:13px;line-height:16px;font-weight:800;letter-spacing:1.2px">ÉTUDIER MON PROJET&nbsp;&nbsp; →</a>
+          </td></tr></table>
+        </td></tr>
+
+        <tr><td class="px" style="padding:28px 40px;background:#0b0c0b">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="font-size:15px;letter-spacing:4px;color:#fff">KAMI<span style="color:#c6f432">STREET</span></td>
+            <td align="right" style="color:#aaa;font-size:10px;line-height:17px">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
+          </tr></table>
+        </td></tr>
+      </table>
+      <p style="margin:15px 0 0;color:#76746f;font-size:10px;line-height:16px">Prise de contact professionnelle · <a href="mailto:contact@kamistreet.fr?subject=Désinscription" style="color:#555;text-decoration:underline">Se désinscrire</a></p>
+    </td></tr>
+  </table>
 </body>
 </html>`.trim();
 
 const FLYER_TEMPLATE = {
-  subject: "KAMISTREET x {{association}} — vélos électriques et mobilité douce en famille",
+  subject: "KAMISTREET — Faites bouger votre quartier, {{association}}",
   html: buildFlyerTemplateHtml(),
 };
 
