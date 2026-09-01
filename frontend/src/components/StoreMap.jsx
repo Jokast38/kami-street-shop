@@ -3,7 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useTheme } from "@/context/ThemeContext";
 
-const STORE_LOCATION = [48.9515, 2.3089];
+const STORE_LOCATION = [48.960412, 2.297176];
 
 export default function StoreMap() {
   const mapRef = useRef(null);

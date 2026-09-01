@@ -51,7 +51,7 @@ const FAQ_JSON_LD = {
   })),
 };
 
-const STORE_LOCATION = { lat: 48.9515, lon: 2.3089 };
+const STORE_LOCATION = { lat: 48.960412, lon: 2.297176 };
 
 const LOCAL_STORE_JSON_LD = {
   "@context": "https://schema.org",
