@@ -1288,7 +1288,7 @@ const buildFlyerTemplateHtml = () => `
       <table role="presentation" class="email" width="680" cellpadding="0" cellspacing="0" border="0" style="width:680px;max-width:680px;background:#f8f6f0;box-shadow:0 14px 42px rgba(20,20,15,.12)">
         <tr><td class="px" style="padding:27px 40px;background:#0b0c0b">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="150" alt="KAMISTREET" style="height:auto;"></td>
+            <td><a href="https://kamistreet.fr" target="_blank"><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="150" alt="KAMISTREET" style="height:auto;"></a></td>
             <td align="right" style="font-size:10px;line-height:14px;font-weight:700;letter-spacing:1.8px;color:#c6f432">MOBILITÉ · PROJET · IMPACT</td>
           </tr></table>
         </td></tr>
@@ -1296,51 +1296,52 @@ const buildFlyerTemplateHtml = () => `
         <tr><td><img src="https://kamistreet.fr/logo/ban-mail-asso.jpg" width="680" alt="Un moniteur KAMISTREET accompagne une famille lors d'une initiation au vélo électrique" style="width:100%;max-width:680px;height:auto"></td></tr>
 
         <tr><td class="px" style="padding:42px 48px 50px;background:#0b0c0b">
-          <p style="margin:0 0 17px;color:#c6f432;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">CENTRES SOCIAUX &amp; EVS</p>
-          <h1 class="headline" style="margin:0 0 22px;color:#fff;font-family:Georgia,'Times New Roman',serif;font-size:54px;line-height:56px;font-weight:400;letter-spacing:-1.5px">Faites bouger<br>votre quartier.</h1>
-          <p style="margin:0;max-width:500px;color:#dddcd7;font-size:17px;line-height:28px">Bonjour {{name}},<br><br>KAMISTREET accompagne les structures de proximité qui souhaitent créer des projets vélo et mobilité douce pour leurs <strong style="color:#fff">jeunes, leurs familles et leurs habitants</strong>.</p>
+          <p style="margin:0 0 17px;color:#c6f432;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">CENTRES SOCIAUX &amp; ESPACES DE VIE SOCIALE</p>
+          <h1 class="headline" style="margin:0 0 10px;color:#fff;font-family:Georgia,'Times New Roman',serif;font-size:44px;line-height:47px;font-weight:400;letter-spacing:-1px">KAMISTREET vous propose<br>une solution clé en main.</h1>
+          <p style="margin:0 0 22px;color:#c6f432;font-size:14px;line-height:19px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase">Faites bouger votre quartier</p>
+          <p style="margin:0;max-width:520px;color:#dddcd7;font-size:16px;line-height:26px">Bonjour {{name}},<br><br>KAMISTREET est fournisseur de solutions de mobilité adaptées aux projets portés par les <strong style="color:#fff">centres sociaux</strong>. Nous accompagnons vos actions d'aller-vers et vos projets d'apprentissage du vélo, pour vos jeunes, vos familles et vos habitants.<br><br>Nous souhaitons proposer à {{association}} la mise en place d'un partenariat autour de deux axes : les projets d'« aller-vers », grâce au <strong style="color:#fff">Curbee</strong>, un véhicule électrique mobile aménageable pour l'accès aux droits, l'inclusion numérique, la parentalité et les animations de proximité ; et les projets d'apprentissage du vélo et de mobilité douce, avec des <strong style="color:#fff">vélos à assistance électrique</strong> individuels et familiaux, adaptés aux actions menées auprès des familles.<br><br>Au-delà de la fourniture des équipements, nous souhaitons vous accompagner dans la définition de vos besoins, la construction de vos projets et l'étude des financements mobilisables auprès de partenaires tels que la CAF, le Département, la CNAV ou la Région.</p>
         </td></tr>
 
         <tr><td class="px" align="center" style="padding:48px 38px 30px;background:#f8f6f0">
-          <p style="margin:0;color:#171717;font-size:12px;line-height:16px;font-weight:700;letter-spacing:3px">UN PROJET, DE L'IDÉE AU TERRAIN</p>
+          <p style="margin:0;color:#171717;font-size:12px;line-height:16px;font-weight:700;letter-spacing:3px">DEUX AXES DE PARTENARIAT</p>
           <div style="width:38px;height:2px;margin:18px auto 0;background:#c6f432"></div>
         </td></tr>
         <tr><td class="px" style="padding:0 38px 52px;background:#f8f6f0">
           <table role="presentation" class="stack" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
             <td class="feature" width="33.33%" valign="top" align="center" style="padding:18px 20px 24px;border-right:1px solid #d9d7d0">
-              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">01</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Équipements adaptés</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Vélos électriques, fatbikes et trottinettes sélectionnés selon vos usages.</p>
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">01</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Curbee</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Véhicule électrique mobile aménageable pour l'accès aux droits, l'inclusion numérique, la parentalité et les animations de proximité.</p>
             </td>
             <td class="feature" width="33.33%" valign="top" align="center" style="padding:18px 20px 24px;border-right:1px solid #d9d7d0">
-              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">02</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Projet sur mesure</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Un accompagnement personnalisé, de l'idée jusqu'à l'acquisition.</p>
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">02</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Vélos à assistance électrique</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Modèles individuels et familiaux, adaptés aux actions d'apprentissage du vélo et de mobilité douce auprès des familles.</p>
             </td>
             <td width="33.33%" valign="top" align="center" style="padding:18px 20px 24px">
-              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500">03</div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Financements étudiés</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Un devis solide et l'étude des aides mobilisables pour concrétiser le projet.</p>
+              <div style="font-family:Georgia,serif;font-size:30px;color:#90b500;line-height:30px">03 <span style="display:inline-block;width:22px;height:22px;line-height:22px;border-radius:50%;background:#90b500;color:#0b0c0b;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:800;text-align:center;vertical-align:middle;margin-left:4px">&#10003;</span></div><h2 style="margin:13px 0 10px;font-size:16px;line-height:21px">Solution clé en main</h2><p style="margin:0;color:#5d5b55;font-size:13px;line-height:21px">Une fois vos besoins et financements étudiés, des équipements livrés prêts à l'emploi pour lancer votre projet sur le terrain.</p>
             </td>
           </tr></table>
         </td></tr>
 
         <tr><td style="background:#e5e1d8">
-          <table role="presentation" class="stack" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td width="45%" valign="middle"><img class="proof-img" src="https://kamistreet.fr/logo/02-velos-electriques-boutique.jpg" width="306" alt="Vélos électriques KAMISTREET en boutique" style="width:306px;height:auto"></td>
-            <td class="px" width="55%" valign="middle" style="padding:36px 38px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td align="center" style="padding:28px 28px 0"><img src="https://kamistreet.fr/parc-en-ciel.jpg" width="624" alt="Parc en ciel KAMISTREET — initiation au vélo en extérieur" style="width:100%;max-width:624px;height:auto"></td></tr>
+            <tr><td class="px" align="center" style="padding:28px 42px 36px">
               <div style="color:#b4dc25;font-family:Georgia,serif;font-size:54px;line-height:30px">"</div>
-              <p style="margin:16px 0 13px;color:#111;font-size:11px;line-height:15px;font-weight:800;letter-spacing:2px">DÉJÀ SUR LE TERRAIN</p>
-              <p style="margin:0;color:#222;font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:29px;font-style:italic">Nous avons accompagné un centre social de Nanterre dans la mise en place d'un projet d'initiation au vélo, avec l'acquisition de plusieurs équipements.</p>
-            </td>
-          </tr></table>
+              <p style="margin:16px 0 15px;color:#111;font-size:18px;line-height:22px;font-weight:900;letter-spacing:1.5px">ILS NOUS ONT FAIT CONFIANCE</p>
+              <p style="margin:0 auto;max-width:460px;color:#222;font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:29px;font-style:italic">Nous avons accompagné un centre social de Nanterre dans la mise en place d'un projet d'initiation au vélo, avec l'acquisition de plusieurs équipements.</p>
+            </td></tr>
+          </table>
         </td></tr>
 
         <tr><td class="px" style="padding:26px 42px;background:#c6f432">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
             <td width="58" style="font-family:Georgia,serif;font-size:39px;line-height:42px">€</td>
-            <td style="padding-left:22px;border-left:1px solid #111;font-size:15px;line-height:23px"><strong>CAF · COLLECTIVITÉS · DÉPARTEMENT · RÉGION</strong><br>Nous étudions avec vous les financements adaptés à votre structure.</td>
+            <td style="padding-left:22px;border-left:1px solid #111;font-size:15px;line-height:23px"><strong>CAF · DÉPARTEMENT · CNAV · RÉGION</strong><br>Nous étudions avec vous les financements mobilisables auprès de vos partenaires institutionnels.</td>
           </tr></table>
         </td></tr>
 
         <tr><td class="px" align="center" style="padding:52px 48px 58px;background:#f8f6f0">
           <div style="width:38px;height:2px;margin:0 auto 18px;background:#c6f432"></div>
           <h2 class="title" style="margin:0 0 13px;font-family:Georgia,'Times New Roman',serif;font-size:38px;line-height:43px;font-weight:400">Un projet pour {{association}} ?</h2>
-          <p style="margin:0 auto 27px;max-width:470px;color:#5d5b55;font-size:15px;line-height:24px">Échangeons quelques minutes pour étudier ce que nous pouvons mettre en place au sein de votre structure.</p>
+          <p style="margin:0 auto 27px;max-width:470px;color:#5d5b55;font-size:15px;line-height:24px">Nous serions heureux de vous rencontrer pour vous présenter nos équipements — Curbee et vélos à assistance électrique — et étudier ensemble les possibilités de partenariat avec votre structure.</p>
           <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#0b0c0b">
             <a class="cta" href="mailto:contact@kamistreet.fr" target="_blank" style="display:inline-block;padding:17px 27px;color:#c6f432;font-size:13px;line-height:16px;font-weight:800;letter-spacing:1.2px">ÉTUDIER MON PROJET&nbsp;&nbsp; →</a>
           </td></tr></table>
@@ -1348,7 +1349,8 @@ const buildFlyerTemplateHtml = () => `
 
         <tr><td class="px" style="padding:28px 40px;background:#0b0c0b">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="100" alt="KAMISTREET" style="height:auto;"></td>
+            <td><a href="https://kamistreet.fr" target="_blank"><img src="https://kamistreet.fr/logo/logo-kami-offwhite.png" width="100" alt="KAMISTREET" style="height:auto;"></a></td>
+            <td valign="middle"><a href="https://kamistreet.fr" target="_blank" style="color:#c6f432;font-size:11px;font-weight:700;letter-spacing:0.5px;text-decoration:underline">kamistreet.fr</a></td>
             <td align="right" style="color:#aaa;font-size:10px;line-height:17px">59 avenue Joffre<br>93800 Épinay-sur-Seine</td>
           </tr></table>
         </td></tr>
