@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
-import ProductCard from "@/components/ProductCard";
+import SubcategoryProductGrid from "@/components/SubcategoryProductGrid";
 import SEO from "@/components/SEO";
 import { withImageAlt } from "@/lib/html";
 
@@ -32,7 +32,7 @@ export default function CategoryPage() {
     api.get(`/categories/${slug}`)
       .then(r => setCategory(r.data))
       .catch(() => setNotFound(true));
-    api.get("/products", { params: { category: slug, limit: 100 } })
+    api.get("/products", { params: { category: slug, limit: 300 } })
       .then(r => setProducts(r.data))
       .finally(() => setLoading(false));
   }, [slug]);
@@ -75,9 +75,11 @@ export default function CategoryPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6" data-testid="category-product-grid">
-            {products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
-          </div>
+          <SubcategoryProductGrid
+            products={products}
+            subcategories={category?.subcategories || []}
+            parentSlug={slug}
+          />
           {category?.description && (
             <div className="max-w-4xl mx-auto mt-10 pt-10 border-t border-border">
               <div

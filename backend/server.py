@@ -706,7 +706,9 @@ async def list_products(
 ):
     q: Dict[str, Any] = {"active": True}
     if category:
-        q["categories"] = category
+        children = await db.categories.find({"parent_slug": category}, {"_id": 0, "slug": 1}).to_list(100)
+        slugs = [category] + [c["slug"] for c in children]
+        q["categories"] = {"$in": slugs} if len(slugs) > 1 else category
     if brand:
         q["brands"] = brand
     if featured is not None:
@@ -742,6 +744,7 @@ async def get_category(slug: str):
     doc = await db.categories.find_one({"slug": slug}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Catégorie introuvable")
+    doc["subcategories"] = await db.categories.find({"parent_slug": slug}, {"_id": 0}).sort("name", 1).to_list(100)
     return doc
 
 
@@ -2849,7 +2852,10 @@ async def sync_woo(user=Depends(current_staff)):
     try:
         # Categories first
         cats = await _woo_get("products/categories", {"per_page": 100})
+        cat_by_woo_id = {c["id"]: c for c in cats}
         for c in cats:
+            parent_woo_id = c.get("parent") or 0
+            parent_slug = cat_by_woo_id.get(parent_woo_id, {}).get("slug") if parent_woo_id else None
             await db.categories.update_one(
                 {"woo_id": c["id"]},
                 {"$set": {
@@ -2860,6 +2866,8 @@ async def sync_woo(user=Depends(current_staff)):
                     "count": c.get("count", 0),
                     "image": (c.get("image") or {}).get("src"),
                     "description": c.get("description", ""),
+                    "parent_woo_id": parent_woo_id,
+                    "parent_slug": parent_slug,
                 }},
                 upsert=True,
             )
@@ -2915,6 +2923,7 @@ async def sync_woo(user=Depends(current_staff)):
                     except Exception as e:
                         logging.warning(f"variations err {p['id']}: {e}")
 
+                meta = {m.get("key"): m.get("value") for m in p.get("meta_data", []) if m.get("key")}
                 doc = {
                     "id": str(p["id"]),
                     "woo_id": p["id"],
@@ -2926,11 +2935,13 @@ async def sync_woo(user=Depends(current_staff)):
                     "regular_price": regular_price,
                     "sale_price": sale_price,
                     "stock": p.get("stock_quantity") or 0,
+                    "sku": p.get("sku") or "",
                     "categories": [c["slug"] for c in p.get("categories", [])],
                     "brands": [b["slug"] for b in p.get("brands", [])],
                     "images": [img["src"] for img in p.get("images", []) if img.get("src")],
                     "variations": variations,
                     "featured": (existing_product or {}).get("featured", p.get("featured", False)),
+                    "preorder": bool(meta.get("_imooving_source_id")),
                     "active": p.get("status") == "publish",
                     "wc_status": p.get("status"),
                     "updated_at": now_iso(),

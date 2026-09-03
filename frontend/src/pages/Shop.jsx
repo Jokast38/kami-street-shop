@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import ProductCard from "@/components/ProductCard";
+import SubcategoryProductGrid from "@/components/SubcategoryProductGrid";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,7 @@ export default function Shop() {
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    const params = {};
+    const params = { limit: 300 };
     if (category) params.category = category;
     if (brand) params.brand = brand;
     if (search) params.search = search;
@@ -107,8 +107,12 @@ export default function Shop() {
               Aucun produit. Synchronisez WooCommerce depuis le dashboard admin.
             </div>
           ) : category ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6" data-testid="product-grid">
-              {products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
+            <div data-testid="product-grid">
+              <SubcategoryProductGrid
+                products={products}
+                subcategories={categories.filter(c => c.parent_slug === category)}
+                parentSlug={category}
+              />
             </div>
           ) : (
             <div className="space-y-12" data-testid="product-grid">
@@ -117,9 +121,11 @@ export default function Shop() {
                   <h2 className="display text-xl font-bold uppercase tracking-widest mb-4 pb-2 border-b border-border">
                     {group.name}
                   </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                    {group.products.map((p, i) => <ProductCard key={p.id} p={p} index={i} />)}
-                  </div>
+                  <SubcategoryProductGrid
+                    products={group.products}
+                    subcategories={categories.filter(c => c.parent_slug === group.slug)}
+                    parentSlug={group.slug}
+                  />
                 </div>
               ))}
             </div>

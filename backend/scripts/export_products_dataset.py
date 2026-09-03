@@ -25,7 +25,7 @@ load_dotenv(ROOT / ".env")
 
 WOO_KEY = os.environ["WOOCOMMERCE_KEY_K"]
 WOO_SECRET = os.environ["WOOCOMMERCE_SECRET_K"]
-WP_SITE = os.environ["WORDPRESS_SITE_K"]
+WP_SITE = os.environ["WORDPRESS_SITE_K"].strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 
 OUT_DIR = ROOT / "data"
 OUT_DIR.mkdir(exist_ok=True)

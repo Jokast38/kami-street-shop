@@ -16,7 +16,12 @@ export default function ProductCard({ p, index = 0 }) {
       data-testid={`product-card-${p.slug}`}
     >
       <Link to={`/product/${p.slug}`} className="product-card block bg-card group">
-        <div className="aspect-square overflow-hidden bg-white">
+        <div className="aspect-square overflow-hidden bg-white relative">
+          {p.preorder && (
+            <span className="absolute top-2 left-2 z-10 bg-black text-accent text-[10px] font-bold uppercase tracking-wider px-2 py-1">
+              Précommande
+            </span>
+          )}
           <img
             src={img}
             alt={p.name}

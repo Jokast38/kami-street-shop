@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users, Send, Mail, Inbox, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText, Image, TrendingUp, CreditCard, CheckCircle2, XCircle, Download, Receipt, Users, Send, Mail, Inbox, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
@@ -165,17 +165,25 @@ const WC_STATUS_LABELS = {
   pending: "En attente",
 };
 
+const PRODUCTS_PAGE_SIZE = 20;
+
 function ProductsPanel({ items, authAxios, reload }) {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [uploading, setUploading] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
+  const [page, setPage] = useState(1);
 
   const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null, variations: [] };
   const [form, setForm] = useState(emptyProd);
 
   const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PRODUCTS_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const paginated = filtered.slice((safePage - 1) * PRODUCTS_PAGE_SIZE, safePage * PRODUCTS_PAGE_SIZE);
+
+  useEffect(() => { setPage(1); }, [statusFilter]);
 
   const attributesToText = (attrs) => Object.entries(attrs || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
   const textToAttributes = (text) => Object.fromEntries((text || "").split(",").map(s => s.trim()).filter(Boolean).map(pair => {
@@ -286,7 +294,7 @@ function ProductsPanel({ items, authAxios, reload }) {
             <th className="text-left p-3">Statut WP</th><th className="text-left p-3">Actif (boutique)</th><th></th>
           </tr></thead>
           <tbody>
-            {filtered.map(p => {
+            {paginated.map(p => {
               const wcStatus = p.wc_status || (p.active ? "publish" : "draft");
               return (
                 <tr key={p.id} className="border-t border-border" data-testid={`admin-product-${p.id}`}>
@@ -319,6 +327,36 @@ function ProductsPanel({ items, authAxios, reload }) {
           </tbody>
         </table>
       </div>
+
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm" data-testid="products-pagination">
+          <span className="text-muted-foreground">
+            Page {safePage} / {pageCount} · {filtered.length} produit{filtered.length > 1 ? "s" : ""}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-none h-8 w-8"
+              disabled={safePage <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              data-testid="products-page-prev"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-none h-8 w-8"
+              disabled={safePage >= pageCount}
+              onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+              data-testid="products-page-next"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

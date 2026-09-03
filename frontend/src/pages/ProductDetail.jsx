@@ -77,7 +77,12 @@ export default function ProductDetail() {
         jsonLd={productJsonLd}
       />
       <div>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="aspect-square bg-secondary overflow-hidden border border-border">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="aspect-square bg-secondary overflow-hidden border border-border relative">
+          {p.preorder && (
+            <span className="absolute top-3 left-3 z-10 bg-black text-accent text-xs font-bold uppercase tracking-wider px-3 py-1.5">
+              Précommande
+            </span>
+          )}
           <img src={images[activeImg]} alt={p.name} className="w-full h-full object-cover" />
         </motion.div>
         {images.length > 1 && (
