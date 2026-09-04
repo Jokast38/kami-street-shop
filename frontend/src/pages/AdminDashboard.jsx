@@ -1345,6 +1345,7 @@ const buildFlyerTemplateHtml = () => `
           <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#0b0c0b">
             <a class="cta" href="mailto:contact@kamistreet.fr" target="_blank" style="display:inline-block;padding:17px 27px;color:#c6f432;font-size:13px;line-height:16px;font-weight:800;letter-spacing:1.2px">ÉTUDIER MON PROJET&nbsp;&nbsp; →</a>
           </td></tr></table>
+          <p style="margin:22px 0 0;color:#5d5b55;font-size:13px;line-height:19px">Mr TCHAPI<br><strong style="color:#171717">Responsable des Ventes</strong><br>Tél. 07 53 71 98 11</p>
         </td></tr>
 
         <tr><td class="px" style="padding:28px 40px;background:#0b0c0b">
