@@ -32,10 +32,18 @@ function readSitemapPaths() {
       try {
         return new URL(loc).pathname;
       } catch {
-        return loc;
+        // FRONTEND_URL on the backend is missing its https:// scheme, so loc
+        // is something like "kami-street-shop-z5ac.vercel.app/blog/x" rather
+        // than a full URL. Retry with a scheme prepended instead of using
+        // the raw string, which isn't a valid path either.
+        try {
+          return new URL(`https://${loc}`).pathname;
+        } catch {
+          return null;
+        }
       }
     })
-    .filter((p) => p && p !== "/");
+    .filter((p) => p && p !== "/" && p !== null);
 }
 
 function serveBuildDir() {
