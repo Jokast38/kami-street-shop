@@ -11,7 +11,8 @@
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium");
 
 const BUILD_DIR = path.join(__dirname, "..", "build");
 const SITEMAP_FILE = path.join(BUILD_DIR, "sitemap.xml");
@@ -102,7 +103,19 @@ async function main() {
 
   console.log(`[prerender] ${paths.length} pages a prerendre...`);
   const server = await serveBuildDir();
-  const browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox"] });
+  // Vercel's build image lacks the shared libs a plain downloaded Chrome needs
+  // (libnspr4.so etc.), so on Linux CI we use @sparticuz/chromium's
+  // purpose-built serverless binary. Locally (Windows/Mac dev machines) that
+  // binary won't run, so fall back to whatever Chrome is already installed.
+  const launchOptions =
+    process.platform === "linux"
+      ? {
+          headless: true,
+          executablePath: await chromium.executablePath(),
+          args: chromium.args,
+        }
+      : { headless: true, channel: "chrome" };
+  const browser = await puppeteer.launch(launchOptions);
 
   try {
     await runPool(paths, (p) => prerenderPath(browser, p), CONCURRENCY);
