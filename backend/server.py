@@ -27,6 +27,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 import uuid
+import time
 import bcrypt
 import jwt
 import httpx
@@ -94,6 +95,17 @@ MOLLIE_API_BASE = "https://api.mollie.com/v2"
 ALMA_API_KEY = os.environ.get("ALMA_API_KEY", "").strip()
 ALMA_MERCHANT_ID = os.environ.get("ID_ALMA_MERCHANT", "").strip()
 ALMA_API_MODE = os.environ.get("ALMA_API_MODE", os.environ.get("ALMA_MODE", "test")).strip().lower()
+
+# Cdiscount marketplace, via the Octopia seller API (https://developer.octopia-io.net).
+# No sandbox is offered for this API: these credentials talk to production.
+CDISCOUNT_CLIENT_ID = os.environ.get("CDISCOUNT_CLIENT_ID", "").strip()
+CDISCOUNT_SECRET = os.environ.get("CDISCOUNT_SECRET", "").strip()
+CDISCOUNT_SELLER_ID = os.environ.get("CDISCOUNT_SELLER_ID", "").strip()
+CDISCOUNT_SALES_CHANNEL_ID = os.environ.get("CDISCOUNT_SALES_CHANNEL_ID", "CDISFR").strip()
+CDISCOUNT_AUTH_URL = "https://auth.octopia-io.net/auth/realms/maas/protocol/openid-connect/token"
+CDISCOUNT_API_BASE = "https://api.octopia-io.net/seller/v2"
+CDISCOUNT_MARKUP = 1.20  # products are listed on Cdiscount at +20% of our own price
+_cdiscount_token_cache = {"token": None, "expires_at": 0.0}
 
 # Public backend base URL (used to build webhook URLs). Falls back to the Qonto redirect's
 # host if not set explicitly, since that one is already known to be publicly reachable.
@@ -250,6 +262,7 @@ class ProductIn(BaseModel):
     bundle_enabled: bool = False
     bundle_quantity: int = 2
     bundle_price: Optional[float] = None
+    gtin: Optional[str] = None
 
 
 class PromoCodeIn(BaseModel):
@@ -3167,6 +3180,549 @@ async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(c
 async def sync_status(user=Depends(current_staff)):
     doc = await db.settings.find_one({"id": "sync_status"}, {"_id": 0})
     return doc or {"last_sync_at": None, "last_sync_ok": None}
+
+
+# ----------------------------- GS1 GTIN allocation -----------------------------
+# A GTIN isn't fetched from a remote API: GS1 has no "create a GTIN" endpoint. It's a
+# deterministic local computation from the company prefix GS1 assigned us (37018351) plus
+# a sequential item reference we own and increment ourselves, plus a mod-10 check digit.
+# GS1_PRIMARY_API_KEY / GS1_SECONDARY_API_KEY (CodeOnline) are for looking up/verifying
+# products by GTIN, not for allocating new ones, so they aren't used here.
+GS1_COMPANY_PREFIX = os.environ.get("GS1_COMPANY_PREFIX", "37018351")
+
+
+def gtin13_check_digit(digits12: str) -> str:
+    total = 0
+    for i, d in enumerate(reversed(digits12)):
+        weight = 3 if i % 2 == 0 else 1
+        total += int(d) * weight
+    return str((10 - (total % 10)) % 10)
+
+
+async def allocate_gtin() -> str:
+    item_ref_len = 12 - len(GS1_COMPANY_PREFIX)
+    max_ref = 10 ** item_ref_len - 1
+    doc = await db.settings.find_one_and_update(
+        {"id": "gs1_counter"},
+        {"$inc": {"next_item_ref": 1}},
+        upsert=True,
+        return_document=ReturnDocument.BEFORE,
+    )
+    item_ref = (doc or {}).get("next_item_ref", 0)
+    if item_ref > max_ref:
+        raise HTTPException(500, "Plus de reference disponible sur le prefixe GS1 (toutes les references sont utilisees)")
+    base12 = f"{GS1_COMPANY_PREFIX}{item_ref:0{item_ref_len}d}"
+    return base12 + gtin13_check_digit(base12)
+
+
+class GtinGenerateBulkIn(BaseModel):
+    product_ids: List[str]
+
+
+@api.post("/admin/gs1/generate-gtin/{product_id}")
+async def gs1_generate_gtin(product_id: str, user=Depends(current_staff)):
+    product = await db.products.find_one({"id": product_id})
+    if not product:
+        raise HTTPException(404, "Produit introuvable")
+    if product.get("gtin"):
+        return {"product_id": product_id, "gtin": product["gtin"], "created": False}
+    gtin = await allocate_gtin()
+    await db.products.update_one({"id": product_id}, {"$set": {"gtin": gtin}})
+    return {"product_id": product_id, "gtin": gtin, "created": True}
+
+
+@api.post("/admin/gs1/generate-gtin-bulk")
+async def gs1_generate_gtin_bulk(body: GtinGenerateBulkIn, user=Depends(current_staff)):
+    results = []
+    for pid in body.product_ids:
+        product = await db.products.find_one({"id": pid})
+        if not product:
+            results.append({"product_id": pid, "ok": False, "error": "Produit introuvable"})
+            continue
+        if product.get("gtin"):
+            results.append({"product_id": pid, "ok": True, "gtin": product["gtin"], "created": False})
+            continue
+        gtin = await allocate_gtin()
+        await db.products.update_one({"id": pid}, {"$set": {"gtin": gtin}})
+        results.append({"product_id": pid, "ok": True, "gtin": gtin, "created": True})
+    return {"results": results}
+
+
+class Gs1CategoryMapIn(BaseModel):
+    category: str
+    gs1_code: str
+
+
+@api.get("/admin/gs1/category-map")
+async def gs1_get_category_map(user=Depends(current_staff)):
+    rows = await db.gs1_category_map.find({}, {"_id": 0}).to_list(500)
+    return rows
+
+
+@api.post("/admin/gs1/category-map")
+async def gs1_set_category_map(body: Gs1CategoryMapIn, user=Depends(current_staff)):
+    await db.gs1_category_map.update_one(
+        {"category": body.category},
+        {"$set": {"category": body.category, "gs1_code": body.gs1_code}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.delete("/admin/gs1/category-map/{category}")
+async def gs1_delete_category_map(category: str, user=Depends(current_staff)):
+    await db.gs1_category_map.delete_one({"category": category})
+    return {"ok": True}
+
+
+GS1_IMPORT_TEMPLATE_PATH = Path(__file__).parent / "assets" / "gs1_import_template.xlsx"
+GS1_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
+
+@api.get("/admin/gs1/export-xlsx")
+async def gs1_export_xlsx(exclude_imooving: bool = True, generate_missing: bool = True, user=Depends(current_staff)):
+    """Fills GS1 France's official "Modele import GS1" template (assets/gs1_import_template.xlsx,
+    provided by GS1) so it can be re-imported as-is into myGS1/CodeOnline to declare the GTINs —
+    there's no public API for that step, only the member portal's own file import. Products scraped
+    from iMooving carry a sku like "IMV-..." (see scripts/import_imooving_to_woocommerce.py); those
+    are third-party accessories we resell, not products we should register a GTIN for.
+    GTINs are filled in (not left blank) because the template's own instructions say the "importer
+    vos GTIN" flow requires them, provided they aren't already declared on CodeOnline — true here
+    since ours are freshly computed from our own GS1 company prefix, never submitted before."""
+    import openpyxl
+    from fastapi.responses import Response
+    import io
+
+    if not GS1_IMPORT_TEMPLATE_PATH.exists():
+        raise HTTPException(500, "Modele GS1 introuvable sur le serveur (assets/gs1_import_template.xlsx)")
+
+    query = {"sku": {"$not": {"$regex": "^IMV-"}}} if exclude_imooving else {}
+    query["gs1_declared"] = {"$ne": True}
+    products = await db.products.find(query, {"_id": 0}).sort("name", 1).to_list(5000)
+    already_declared_count = await db.products.count_documents({"gs1_declared": True})
+
+    if generate_missing:
+        for p in products:
+            if not p.get("gtin"):
+                gtin = await allocate_gtin()
+                await db.products.update_one({"id": p["id"]}, {"$set": {"gtin": gtin}})
+                p["gtin"] = gtin
+
+    cat_rows = await db.gs1_category_map.find({}, {"_id": 0}).to_list(500)
+    cat_map = {r["category"]: r["gs1_code"] for r in cat_rows}
+
+    # "Code de la categorie du produit" is marked Obligatoire in GS1's template: a row without
+    # one isn't a valid import, so products whose category has no GS1 mapping yet are skipped
+    # rather than exported with a blank required field.
+    eligible, skipped_unmapped = [], []
+    for p in products:
+        category_code = next((cat_map[c] for c in p.get("categories", []) if c in cat_map), None)
+        if category_code:
+            eligible.append((p, category_code))
+        else:
+            skipped_unmapped.append(p)
+
+    wb = openpyxl.load_workbook(GS1_IMPORT_TEMPLATE_PATH)
+    ws = wb["Liste de produits"]
+
+    row_idx = 3  # rows 1-2 are the header + GS1's own help text, per the template
+    for p, category_code in eligible:
+        images = [img for img in (p.get("images") or []) if img.lower().endswith(GS1_IMAGE_EXTENSIONS)][:3]
+        description = re.sub(r"<[^>]+>", " ", p.get("short_description") or p.get("description") or "").strip()
+        # GS1 counts the 2000-char limit in UTF-16 code units, not Python's code-point
+        # length: an emoji or other astral character (U+10000+) is 1 Python char but 2
+        # there, so a description that fits under len() can still be rejected as too
+        # long. Drop those characters (they don't belong in a product description
+        # anyway) and truncate with margin rather than cutting exactly at the limit.
+        description = "".join(c for c in description if ord(c) <= 0xFFFF)[:1900]
+        ws.cell(row=row_idx, column=1, value=p.get("gtin") or "")
+        ws.cell(row=row_idx, column=2, value=category_code)
+        ws.cell(row=row_idx, column=3, value=(p.get("name") or "")[:200])
+        ws.cell(row=row_idx, column=4, value=(p.get("brands") or ["Kami Street"])[0][:70])
+        ws.cell(row=row_idx, column=5, value="")
+        for i, img in enumerate(images):
+            ws.cell(row=row_idx, column=6 + i, value=img)
+        ws.cell(row=row_idx, column=9, value=description)
+        ws.cell(row=row_idx, column=10, value=f"{FRONTEND_URL}/product/{p.get('slug', '')}")
+        ws.cell(row=row_idx, column=11, value=1)
+        ws.cell(row=row_idx, column=12, value="PIECE")
+        ws.cell(row=row_idx, column=13, value="")
+        ws.cell(row=row_idx, column=14, value=p.get("sku") or p.get("id") or "")
+        row_idx += 1
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="kami-street-import-gs1.xlsx"',
+            "X-Exported-Count": str(len(eligible)),
+            "X-Skipped-Unmapped-Count": str(len(skipped_unmapped)),
+            "X-Skipped-Declared-Count": str(already_declared_count),
+            "Access-Control-Expose-Headers": "X-Exported-Count, X-Skipped-Unmapped-Count, X-Skipped-Declared-Count",
+        },
+    )
+
+
+# ----------------------------- Cdiscount (Octopia seller API) -----------------------------
+# Valid deliveryModes codes per Octopia's offer-management spec.
+CDISCOUNT_DELIVERY_CODES = {"THD", "EHD", "SHD", "FDHD", "SRHD", "WSHD", "NTHD", "IVP", "SVP", "PPMR", "PPLP"}
+CDISCOUNT_DEFAULT_DELIVERY = {"code": "SVP", "cost": 0.0, "additional_cost": 0.0}
+
+
+class CdiscountCategoryMapIn(BaseModel):
+    category: str
+    cdiscount_code: str
+
+
+class CdiscountDeliveryMapIn(BaseModel):
+    category: str
+    code: str
+    cost: float = 0.0
+    additional_cost: float = 0.0
+
+
+class CdiscountPushIn(BaseModel):
+    product_ids: List[str]
+
+
+async def get_cdiscount_token() -> str:
+    now = time.time()
+    if _cdiscount_token_cache["token"] and _cdiscount_token_cache["expires_at"] > now + 30:
+        return _cdiscount_token_cache["token"]
+    if not (CDISCOUNT_CLIENT_ID and CDISCOUNT_SECRET):
+        raise HTTPException(500, "Identifiants Cdiscount (CDISCOUNT_CLIENT_ID / CDISCOUNT_SECRET) manquants")
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(
+            CDISCOUNT_AUTH_URL,
+            data={"client_id": CDISCOUNT_CLIENT_ID, "client_secret": CDISCOUNT_SECRET, "grant_type": "client_credentials"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Auth Cdiscount echouee: {r.text[:300]}")
+        data = r.json()
+    _cdiscount_token_cache["token"] = data["access_token"]
+    _cdiscount_token_cache["expires_at"] = now + data.get("expires_in", 7200)
+    return _cdiscount_token_cache["token"]
+
+
+async def cdiscount_client() -> httpx.AsyncClient:
+    token = await get_cdiscount_token()
+    return httpx.AsyncClient(
+        base_url=CDISCOUNT_API_BASE,
+        timeout=30,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "SellerId": CDISCOUNT_SELLER_ID,
+            "SalesChannelId": CDISCOUNT_SALES_CHANNEL_ID,
+            "Content-Type": "application/json",
+            "Accept-Language": "fr-FR",
+        },
+    )
+
+
+@api.get("/admin/cdiscount/categories/search")
+async def cdiscount_search_categories(q: str = "", user=Depends(current_staff)):
+    """Octopia's GET /categories has no text-search param, so we cache the full ~8000-row
+    list locally (refreshed on demand) and filter it here. Only level-3 categories are
+    returned since categoryCode on a product must be a level-3 (6-char) reference."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    count = await db.cdiscount_categories_cache.count_documents({})
+    if count == 0:
+        await cdiscount_refresh_categories_cache()
+    rows = await db.cdiscount_categories_cache.find(
+        {"level": 3, "label": {"$regex": re.escape(q), "$options": "i"}},
+        {"_id": 0},
+    ).to_list(50)
+    return rows
+
+
+@api.post("/admin/cdiscount/categories/refresh")
+async def cdiscount_refresh_categories(user=Depends(current_staff)):
+    count = await cdiscount_refresh_categories_cache()
+    return {"ok": True, "count": count}
+
+
+async def cdiscount_refresh_categories_cache() -> int:
+    all_items = []
+    async with await cdiscount_client() as client:
+        page = 1
+        while True:
+            r = await client.get(
+                "/categories",
+                params={"pageIndex": page, "pageSize": 1000, "fields": "label,level,parentReference,isActive"},
+            )
+            if r.status_code >= 400:
+                raise HTTPException(502, f"Erreur categories Cdiscount: {r.status_code} {r.text[:300]}")
+            items = r.json().get("items", [])
+            all_items.extend(items)
+            if len(items) < 1000:
+                break
+            page += 1
+            if page > 30:
+                break
+    if all_items:
+        await db.cdiscount_categories_cache.delete_many({})
+        await db.cdiscount_categories_cache.insert_many(all_items)
+    return len(all_items)
+
+
+@api.get("/admin/cdiscount/category-map")
+async def cdiscount_get_category_map(user=Depends(current_staff)):
+    rows = await db.cdiscount_category_map.find({}, {"_id": 0}).to_list(500)
+    return rows
+
+
+@api.post("/admin/cdiscount/category-map")
+async def cdiscount_set_category_map(body: CdiscountCategoryMapIn, user=Depends(current_staff)):
+    await db.cdiscount_category_map.update_one(
+        {"category": body.category},
+        {"$set": {"category": body.category, "cdiscount_code": body.cdiscount_code}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.delete("/admin/cdiscount/category-map/{category}")
+async def cdiscount_delete_category_map(category: str, user=Depends(current_staff)):
+    await db.cdiscount_category_map.delete_one({"category": category})
+    return {"ok": True}
+
+
+@api.get("/admin/cdiscount/delivery-map")
+async def cdiscount_get_delivery_map(user=Depends(current_staff)):
+    rows = await db.cdiscount_delivery_map.find({}, {"_id": 0}).to_list(500)
+    return rows
+
+
+@api.post("/admin/cdiscount/delivery-map")
+async def cdiscount_set_delivery_map(body: CdiscountDeliveryMapIn, user=Depends(current_staff)):
+    if body.code not in CDISCOUNT_DELIVERY_CODES:
+        raise HTTPException(400, f"Code de livraison invalide. Valeurs possibles: {', '.join(sorted(CDISCOUNT_DELIVERY_CODES))}")
+    await db.cdiscount_delivery_map.update_one(
+        {"category": body.category},
+        {"$set": {"category": body.category, "code": body.code, "cost": body.cost, "additional_cost": body.additional_cost}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.delete("/admin/cdiscount/delivery-map/{category}")
+async def cdiscount_delete_delivery_map(category: str, user=Depends(current_staff)):
+    await db.cdiscount_delivery_map.delete_one({"category": category})
+    return {"ok": True}
+
+
+@api.get("/admin/cdiscount/exports")
+async def cdiscount_exports(user=Depends(current_staff)):
+    rows = await db.cdiscount_exports.find({}, {"_id": 0}).sort("pushed_at", -1).to_list(500)
+    return rows
+
+
+@api.post("/admin/cdiscount/check-status")
+async def cdiscount_check_status(user=Depends(current_staff)):
+    """A 202 from POST /products-integration only means "queued for processing" — Octopia's
+    own docs say the real outcome (Integrated vs Refused, with error detail) is only known via
+    GET /products-integration-reports. We never checked that before, so cdiscount_exports could
+    say "submitted" for a product Cdiscount actually refused. This polls the report for every
+    product we've pushed (that has a gtin) and updates our stored status to match reality."""
+    exports = await db.cdiscount_exports.find({"gtin": {"$exists": True, "$ne": None}}, {"_id": 0}).to_list(1000)
+    if not exports:
+        return {"checked": 0, "results": []}
+
+    gtin_to_pid = {e["gtin"]: e["product_id"] for e in exports}
+    gtins = list(gtin_to_pid.keys())
+
+    reports_by_gtin = {}
+    async with await cdiscount_client() as client:
+        for i in range(0, len(gtins), 10):  # GET /products-integration-reports takes up to 10 gtins per call
+            batch = gtins[i:i + 10]
+            r = await client.get("/products-integration-reports", params={"gtin": ",".join(batch)})
+            if r.status_code >= 400:
+                continue
+            for item in r.json().get("items", []):
+                g = str(item.get("gtin"))
+                # A gtin can have multiple report rows (re-submissions); keep the most recent.
+                prev = reports_by_gtin.get(g)
+                if not prev or item.get("submissionDate", "") > prev.get("submissionDate", ""):
+                    reports_by_gtin[g] = item
+
+    results = []
+    for gtin, pid in gtin_to_pid.items():
+        report = reports_by_gtin.get(gtin)
+        if not report:
+            results.append({"product_id": pid, "gtin": gtin, "status": "unknown", "detail": "Pas encore de rapport Cdiscount pour ce GTIN"})
+            continue
+        status = report.get("status")
+        errors = [e.get("message", "") for e in report.get("errors", [])]
+        await db.cdiscount_exports.update_one(
+            {"product_id": pid},
+            {"$set": {"status": "integrated" if status == "Integrated" else "refused" if status == "Refused" else status.lower(), "cdiscount_errors": errors}},
+        )
+        results.append({"product_id": pid, "gtin": gtin, "status": status, "errors": errors})
+
+    return {"checked": len(results), "results": results}
+
+
+async def cdiscount_post_with_retry(client: httpx.AsyncClient, path: str, json_body, max_retries: int = 5):
+    """Octopia enforces a submission quota and answers 429 with a
+    "Try again in N seconds" hint when it's hit. products-integration/offer-packages
+    calls happen once per product in cdiscount_push's loop, which trips this quota
+    fast when pushing more than a couple of products at once — retry with the
+    server-given delay (or a growing backoff when it doesn't say) instead of failing."""
+    for attempt in range(max_retries):
+        r = await client.post(path, json=json_body)
+        if r.status_code != 429:
+            return r
+        wait_s = 2.0 * (attempt + 1)
+        try:
+            m = re.search(r"in (\d+(?:\.\d+)?) seconds?", r.text)
+            if m:
+                wait_s = float(m.group(1)) + 0.5
+        except Exception:
+            pass
+        await asyncio.sleep(wait_s)
+    return r
+
+
+@api.post("/admin/cdiscount/push")
+async def cdiscount_push(body: CdiscountPushIn, user=Depends(current_staff)):
+    """Publishes the selected products on Cdiscount: creates/updates the product sheet,
+    then creates an offer priced at CDISCOUNT_MARKUP times our own price. Products are sent
+    one at a time (not "all at once") so a bad category mapping or missing GTIN on one
+    product doesn't block the rest of the selection. A short pause between products avoids
+    tripping Octopia's submission-rate quota (see cdiscount_post_with_retry for the 429
+    retry itself, needed since the quota can still be hit even with the pause)."""
+    cat_rows = await db.cdiscount_category_map.find({}, {"_id": 0}).to_list(500)
+    cat_map = {r["category"]: r["cdiscount_code"] for r in cat_rows}
+    delivery_rows = await db.cdiscount_delivery_map.find({}, {"_id": 0}).to_list(500)
+    delivery_map = {r["category"]: r for r in delivery_rows}
+
+    results = []
+    async with await cdiscount_client() as client:
+        for idx, pid in enumerate(body.product_ids):
+            if idx > 0:
+                await asyncio.sleep(1.5)
+            product = await db.products.find_one({"id": pid}, {"_id": 0})
+            if not product:
+                results.append({"product_id": pid, "ok": False, "error": "Produit introuvable"})
+                continue
+
+            name = product.get("name", pid)
+            gtin = (product.get("gtin") or "").strip()
+            category_code = next((cat_map[c] for c in product.get("categories", []) if c in cat_map), None)
+            errors = []
+            if not gtin:
+                errors.append("GTIN manquant sur le produit")
+            if not category_code:
+                errors.append("Aucune categorie du produit n'est mappee vers un code Cdiscount")
+            if not product.get("images"):
+                errors.append("Le produit n'a aucune image")
+            if errors:
+                results.append({"product_id": pid, "name": name, "ok": False, "error": "; ".join(errors)})
+                continue
+
+            base_price = product.get("sale_price") or product.get("price") or 0
+            cdiscount_price = round(base_price * CDISCOUNT_MARKUP, 2)
+            # Reuse the real seller reference when this product already has a live Cdiscount
+            # offer (e.g. the 3 pre-existing ones) — Cdiscount rejects an update submitted under
+            # any other reference ("L'EAN/GTIN ... possede une autre reference vendeur").
+            existing_export = await db.cdiscount_exports.find_one({"product_id": pid}, {"_id": 0})
+            seller_ref = (existing_export or {}).get("seller_reference") or f"KS-{pid}"[:50]
+            delivery = next((delivery_map[c] for c in product.get("categories", []) if c in delivery_map), CDISCOUNT_DEFAULT_DELIVERY)
+
+            try:
+                description = re.sub(r"<[^>]+>", " ", product.get("description") or name).strip()
+                description = "".join(c for c in description if ord(c) <= 0xFFFF)[:1950] or name[:1950]
+                product_payload = {"products": [{
+                    # Octopia's own example shows an unquoted JSON number, not a string.
+                    "gtin": int(gtin),
+                    "title": name[:132],
+                    "description": description,
+                    "categoryCode": category_code,
+                    "brand": (product.get("brands") or ["Kami Street"])[0],
+                    "sellerProductReference": seller_ref,
+                    # Spec caps sellerPictureUrls at 6 images (docs list 8 max elsewhere, but this
+                    # endpoint's own table says "at least 1 and up to 6").
+                    "sellerPictureUrls": [{"index": i + 1, "url": url} for i, url in enumerate(product.get("images", [])[:6])],
+                }]}
+                r1 = await cdiscount_post_with_retry(client, "/products-integration", product_payload)
+                if r1.status_code >= 400:
+                    raise RuntimeError(f"products-integration: {r1.status_code} {r1.text[:300]}")
+
+                r2 = await cdiscount_post_with_retry(client, "/offer-packages", {"packageType": "Upsert"})
+                if r2.status_code >= 400:
+                    raise RuntimeError(f"offer-packages: {r2.status_code} {r2.text[:300]}")
+                # POST /offer-packages returns 201 with an empty body: the id is only in the
+                # Content-Location header (".../offer-packages/<id>"), not JSON.
+                package_id = None
+                if r2.text.strip():
+                    package_id = r2.json().get("packageId") or r2.json().get("id")
+                if not package_id:
+                    location = r2.headers.get("content-location") or r2.headers.get("location") or ""
+                    package_id = location.rstrip("/").rsplit("/", 1)[-1] or None
+                if not package_id:
+                    raise RuntimeError(f"offer-packages: impossible d'extraire le packageId ({r2.status_code}, headers={dict(r2.headers)})")
+
+                offer_payload = [{
+                    "sellerExternalReference": seller_ref,
+                    "product": {"gtin": gtin, "reference": seller_ref},
+                    "condition": "New",
+                    # Cdiscount rejects the offer outright without DeaTax/EcoTax present, even
+                    # when 0 applies (confirmed via GET .../offer-requests-results: "EcoTax/DeaTax:
+                    # Champ obligatoire pour la creation d'une offre"). Defaulted to 0 here since we
+                    # don't yet track real eco-participation amounts per product/category.
+                    "price": {"price": cdiscount_price, "taxes": [
+                        {"code": "VAT", "value": 20},
+                        {"code": "EcoTax", "value": 0},
+                        {"code": "DeaTax", "value": 0},
+                    ]},
+                    "deliveryModes": [{"code": delivery["code"], "cost": delivery.get("cost", 0), "additionalCost": delivery.get("additional_cost", 0)}],
+                    "preparationTime": 2,
+                    "quantity": max(0, int(product.get("stock", 0))),
+                }]
+                r3 = await cdiscount_post_with_retry(client, f"/offer-packages/{package_id}/offer-requests", offer_payload)
+                if r3.status_code >= 400:
+                    raise RuntimeError(f"offer-requests: {r3.status_code} {r3.text[:300]}")
+
+                r4 = await client.patch(f"/offer-packages/{package_id}", json={"state": "Ready"})
+                if r4.status_code >= 400:
+                    raise RuntimeError(f"offer-packages submit: {r4.status_code} {r4.text[:300]}")
+
+                await db.cdiscount_exports.update_one(
+                    {"product_id": pid},
+                    {"$set": {
+                        "product_id": pid,
+                        "name": name,
+                        "seller_reference": seller_ref,
+                        "package_id": package_id,
+                        "gtin": gtin,
+                        "base_price": base_price,
+                        "price_sent": cdiscount_price,
+                        "status": "submitted",
+                        "pushed_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                    upsert=True,
+                )
+                results.append({"product_id": pid, "name": name, "ok": True, "price_sent": cdiscount_price, "package_id": package_id})
+            except Exception as e:
+                await db.cdiscount_exports.update_one(
+                    {"product_id": pid},
+                    {"$set": {
+                        "product_id": pid,
+                        "name": name,
+                        "status": "error",
+                        "error": str(e)[:500],
+                        "pushed_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                    upsert=True,
+                )
+                results.append({"product_id": pid, "name": name, "ok": False, "error": str(e)[:500]})
+
+    return {"results": results}
 
 
 # ----------------------------- Health -----------------------------

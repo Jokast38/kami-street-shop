@@ -100,6 +100,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="mailbox" data-testid="tab-mailbox" className="shrink-0">Messagerie</TabsTrigger>
             <TabsTrigger value="campaigns" data-testid="tab-campaigns" className="shrink-0">Campagnes</TabsTrigger>
             <TabsTrigger value="marketing" data-testid="tab-marketing" className="shrink-0">Marketing</TabsTrigger>
+            <TabsTrigger value="cdiscount" data-testid="tab-cdiscount" className="shrink-0">Cdiscount</TabsTrigger>
             {isAdmin && <TabsTrigger value="collaborators" data-testid="tab-collaborators" className="shrink-0">Collaborateurs</TabsTrigger>}
           </TabsList>
 
@@ -134,6 +135,9 @@ export default function AdminDashboard() {
           </TabsContent>
           <TabsContent value="marketing" className="mt-6">
             <MarketingPanel authAxios={authAxios} />
+          </TabsContent>
+          <TabsContent value="cdiscount" className="mt-6">
+            <CdiscountPanel products={products} authAxios={authAxios} reloadProducts={loadAll} />
           </TabsContent>
           {isAdmin && (
             <TabsContent value="collaborators" className="mt-6">
@@ -175,7 +179,7 @@ function ProductsPanel({ items, authAxios, reload }) {
   const [newImageUrl, setNewImageUrl] = useState("");
   const [page, setPage] = useState(1);
 
-  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null, variations: [] };
+  const emptyProd = { name: "", description: "", short_description: "", price: 0, sale_price: null, stock: 0, categories: "", brands: "", images: [], featured: false, active: true, bundle_enabled: false, bundle_quantity: 2, bundle_price: null, variations: [], gtin: "" };
   const [form, setForm] = useState(emptyProd);
 
   const filtered = statusFilter === "all" ? items : items.filter(p => (p.wc_status || (p.active ? "publish" : "draft")) === statusFilter);
@@ -409,6 +413,32 @@ function ProductsPanel({ items, authAxios, reload }) {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Catégories (séparées par virgule)</Label><Input value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
               <div><Label>Marques (séparées par virgule)</Label><Input value={form.brands} onChange={e => setForm({ ...form, brands: e.target.value })} /></div>
+            </div>
+
+            <div>
+              <Label>GTIN / EAN (code-barres — requis pour l'export Cdiscount)</Label>
+              <div className="flex gap-2">
+                <Input value={form.gtin || ""} onChange={e => setForm({ ...form, gtin: e.target.value })} placeholder="Ex: 3701835100039" data-testid="product-gtin-input" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-none shrink-0"
+                  disabled={!editing || !!form.gtin}
+                  onClick={async () => {
+                    try {
+                      const { data } = await authAxios.post(`/admin/gs1/generate-gtin/${editing.id}`);
+                      setForm(f => ({ ...f, gtin: data.gtin }));
+                      toast.success("GTIN généré");
+                    } catch (e) {
+                      toast.error(e?.response?.data?.detail || "Erreur de génération GTIN");
+                    }
+                  }}
+                  data-testid="generate-gtin-btn"
+                >
+                  Générer (GS1)
+                </Button>
+              </div>
+              {!editing && <p className="text-xs text-muted-foreground mt-1">Enregistrez d'abord le produit pour pouvoir générer son GTIN.</p>}
             </div>
 
             <div>
@@ -1944,6 +1974,495 @@ function MarketingPanel({ authAxios }) {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+const CDISCOUNT_MARKUP = 1.20;
+const CDISCOUNT_DELIVERY_CODES = [
+  { code: "THD", label: "THD — Livraison suivie à domicile" },
+  { code: "EHD", label: "EHD — Livraison express à domicile" },
+  { code: "SHD", label: "SHD — Livraison à domicile avec signature" },
+  { code: "FDHD", label: "FDHD — Livraison à domicile date fixe" },
+  { code: "SVP", label: "SVP — Retrait en magasin (Vendor Pickup)" },
+  { code: "IVP", label: "IVP — Retrait immédiat en magasin" },
+  { code: "PPMR", label: "PPMR — Point relais Mondial Relay" },
+  { code: "PPLP", label: "PPLP — Point relais La Poste" },
+];
+
+function CdiscountPanel({ products, authAxios, reloadProducts }) {
+  const [categoryMap, setCategoryMap] = useState([]);
+  const [deliveryMap, setDeliveryMap] = useState([]);
+  const [exports, setExports] = useState([]);
+  const [selected, setSelected] = useState({});
+  const [categoryPick, setCategoryPick] = useState("");
+  const [newMap, setNewMap] = useState({ category: "", cdiscount_code: "" });
+  const [codeSearch, setCodeSearch] = useState("");
+  const [codeResults, setCodeResults] = useState([]);
+  const [codeSearching, setCodeSearching] = useState(false);
+  const [newDelivery, setNewDelivery] = useState({ category: "", code: "SVP", cost: 0, additional_cost: 0 });
+  const [pushing, setPushing] = useState(false);
+  const [lastResults, setLastResults] = useState(null);
+
+  const load = useCallback(() => {
+    authAxios.get("/admin/cdiscount/category-map").then(r => setCategoryMap(r.data)).catch(() => {});
+    authAxios.get("/admin/cdiscount/delivery-map").then(r => setDeliveryMap(r.data)).catch(() => {});
+    authAxios.get("/admin/cdiscount/exports").then(r => setExports(r.data)).catch(() => {});
+  }, [authAxios]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (codeSearch.trim().length < 2) { setCodeResults([]); return; }
+    setCodeSearching(true);
+    const t = setTimeout(() => {
+      authAxios.get("/admin/cdiscount/categories/search", { params: { q: codeSearch.trim() } })
+        .then(r => setCodeResults(r.data))
+        .catch(() => setCodeResults([]))
+        .finally(() => setCodeSearching(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [codeSearch, authAxios]);
+
+  const [gs1OnlyFilter, setGs1OnlyFilter] = useState(true);
+  const visibleProducts = gs1OnlyFilter ? products.filter(p => p.gs1_declared) : products;
+
+  const allCategories = [...new Set(visibleProducts.flatMap(p => p.categories || []))].sort();
+  const mappedCategories = new Set(categoryMap.map(m => m.category));
+  const exportByProduct = Object.fromEntries(exports.map(e => [e.product_id, e]));
+
+  const selectedIds = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
+
+  const toggle = (id) => setSelected(s => ({ ...s, [id]: !s[id] }));
+  const selectByCategory = () => {
+    if (!categoryPick) return;
+    const ids = visibleProducts.filter(p => (p.categories || []).includes(categoryPick)).map(p => p.id);
+    setSelected(s => {
+      const next = { ...s };
+      ids.forEach(id => { next[id] = true; });
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected({});
+
+  const saveMapping = async () => {
+    if (!newMap.category || !newMap.cdiscount_code) return;
+    try {
+      await authAxios.post("/admin/cdiscount/category-map", newMap);
+      toast.success("Mapping enregistré");
+      setNewMap({ category: "", cdiscount_code: "" });
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur");
+    }
+  };
+  const deleteMapping = async (category) => {
+    await authAxios.delete(`/admin/cdiscount/category-map/${encodeURIComponent(category)}`);
+    load();
+  };
+
+  const saveDelivery = async () => {
+    if (!newDelivery.category || !newDelivery.code) return;
+    try {
+      await authAxios.post("/admin/cdiscount/delivery-map", {
+        ...newDelivery,
+        cost: parseFloat(newDelivery.cost) || 0,
+        additional_cost: parseFloat(newDelivery.additional_cost) || 0,
+      });
+      toast.success("Mode de livraison enregistré");
+      setNewDelivery({ category: "", code: "SVP", cost: 0, additional_cost: 0 });
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur");
+    }
+  };
+  const deleteDelivery = async (category) => {
+    await authAxios.delete(`/admin/cdiscount/delivery-map/${encodeURIComponent(category)}`);
+    load();
+  };
+
+  const [gs1CategoryMap, setGs1CategoryMap] = useState([]);
+  const [newGs1Map, setNewGs1Map] = useState({ category: "", gs1_code: "" });
+  const loadGs1Map = useCallback(() => {
+    authAxios.get("/admin/gs1/category-map").then(r => setGs1CategoryMap(r.data)).catch(() => {});
+  }, [authAxios]);
+  useEffect(() => { loadGs1Map(); }, [loadGs1Map]);
+  const saveGs1Map = async () => {
+    if (!newGs1Map.category || !newGs1Map.gs1_code) return;
+    try {
+      await authAxios.post("/admin/gs1/category-map", newGs1Map);
+      toast.success("Mapping GS1 enregistré");
+      setNewGs1Map({ category: "", gs1_code: "" });
+      loadGs1Map();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Erreur"); }
+  };
+  const deleteGs1Map = async (category) => {
+    await authAxios.delete(`/admin/gs1/category-map/${encodeURIComponent(category)}`);
+    loadGs1Map();
+  };
+
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const doExportGs1Csv = async () => {
+    setExportingCsv(true);
+    try {
+      const res = await authAxios.get("/admin/gs1/export-xlsx", { responseType: "blob" });
+      const exported = parseInt(res.headers["x-exported-count"] || "0", 10);
+      const skipped = parseInt(res.headers["x-skipped-unmapped-count"] || "0", 10);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "kami-street-import-gs1.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      if (skipped > 0) {
+        toast.warning(`${exported} produit(s) exporté(s), ${skipped} ignoré(s) car leur catégorie n'a pas de code GS1 mappé`);
+      } else {
+        toast.success(`${exported} produit(s) exporté(s) vers le modèle GS1`);
+      }
+      reloadProducts?.();
+    } catch (e) {
+      toast.error("Erreur lors de l'export GS1");
+    } finally { setExportingCsv(false); }
+  };
+
+  const [generatingGtin, setGeneratingGtin] = useState(false);
+  const doGenerateGtins = async () => {
+    const missing = selectedIds.filter(id => !products.find(p => p.id === id)?.gtin);
+    if (missing.length === 0) { toast.info("Tous les produits sélectionnés ont déjà un GTIN"); return; }
+    setGeneratingGtin(true);
+    try {
+      const { data } = await authAxios.post("/admin/gs1/generate-gtin-bulk", { product_ids: missing });
+      const okCount = data.results.filter(r => r.ok).length;
+      toast.success(`${okCount}/${missing.length} GTIN générés`);
+      reloadProducts?.();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur de génération GTIN");
+    } finally { setGeneratingGtin(false); }
+  };
+
+  const doPush = async () => {
+    if (selectedIds.length === 0) return;
+    const alreadyListed = selectedIds.filter(id => exportByProduct[id]?.status === "already_listed");
+    if (alreadyListed.length > 0) {
+      const names = alreadyListed.map(id => products.find(p => p.id === id)?.name || id).join(", ");
+      if (!confirm(`${names} — déjà publié manuellement sur Cdiscount avec une référence vendeur inconnue. Renvoyer risque de créer une offre en double plutôt que de la mettre à jour. Continuer quand même ?`)) return;
+    }
+    setPushing(true);
+    setLastResults(null);
+    try {
+      const { data } = await authAxios.post("/admin/cdiscount/push", { product_ids: selectedIds });
+      setLastResults(data.results);
+      const okCount = data.results.filter(r => r.ok).length;
+      if (okCount > 0) toast.success(`${okCount}/${data.results.length} produit(s) envoyé(s) vers Cdiscount`);
+      if (okCount < data.results.length) toast.error(`${data.results.length - okCount} échec(s), voir le détail ci-dessous`);
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur lors de l'envoi vers Cdiscount");
+    } finally { setPushing(false); }
+  };
+
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const doCheckStatus = async () => {
+    setCheckingStatus(true);
+    try {
+      const { data } = await authAxios.post("/admin/cdiscount/check-status");
+      const integrated = data.results.filter(r => r.status === "Integrated").length;
+      const refused = data.results.filter(r => r.status === "Refused").length;
+      toast.success(`${data.checked} vérifiés — ${integrated} intégrés, ${refused} refusés`);
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Erreur lors de la vérification du statut");
+    } finally { setCheckingStatus(false); }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="display text-xl font-bold mb-2">Mapping catégories → Cdiscount</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Chaque catégorie envoyée sur Cdiscount doit correspondre à un code catégorie Cdiscount (niveau 3, 6 caractères).
+          Trouvez ces codes via l'API <code>GET /categories</code> du <a className="underline" href="https://developer.octopia-io.net/api-reference/product-management/" target="_blank" rel="noreferrer">guide Octopia</a>.
+        </p>
+        <div className="border border-border overflow-x-auto mb-3">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary"><tr><th className="text-left p-3">Catégorie (site)</th><th className="text-left p-3">Code Cdiscount</th><th></th></tr></thead>
+            <tbody>
+              {categoryMap.map(m => (
+                <tr key={m.category} className="border-t border-border">
+                  <td className="p-3">{m.category}</td>
+                  <td className="p-3 font-mono">{m.cdiscount_code}</td>
+                  <td className="p-3 text-right"><Button size="sm" variant="ghost" onClick={() => deleteMapping(m.category)}><Trash2 className="w-4 h-4" /></Button></td>
+                </tr>
+              ))}
+              {categoryMap.length === 0 && (
+                <tr><td colSpan={3} className="p-3 text-muted-foreground text-center">Aucun mapping — les produits de catégories non mappées ne peuvent pas être exportés.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div>
+            <Label className="text-xs">Catégorie du site</Label>
+            <Select value={newMap.category} onValueChange={v => setNewMap({ ...newMap, category: v })}>
+              <SelectTrigger className="w-56 h-9 rounded-none text-xs"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+              <SelectContent>
+                {allCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="relative">
+            <Label className="text-xs">Rechercher une catégorie Cdiscount</Label>
+            <Input
+              className="w-72 h-9 rounded-none text-xs"
+              value={newMap.cdiscount_code ? `${newMap.cdiscount_code} — ${codeSearch}` : codeSearch}
+              onChange={e => { setCodeSearch(e.target.value); setNewMap({ ...newMap, cdiscount_code: "" }); }}
+              placeholder="Ex: velo electrique, trottinette..."
+            />
+            {codeSearch.trim().length >= 2 && !newMap.cdiscount_code && (
+              <div className="absolute z-10 top-full left-0 w-96 max-h-64 overflow-y-auto border border-border bg-background shadow-lg">
+                {codeSearching && <div className="p-2 text-xs text-muted-foreground">Recherche...</div>}
+                {!codeSearching && codeResults.length === 0 && <div className="p-2 text-xs text-muted-foreground">Aucun résultat</div>}
+                {codeResults.map(c => (
+                  <button
+                    type="button"
+                    key={c.categoryReference}
+                    className="block w-full text-left p-2 text-xs hover:bg-secondary border-b border-border"
+                    onClick={() => { setNewMap({ ...newMap, cdiscount_code: c.categoryReference }); setCodeSearch(c.label); setCodeResults([]); }}
+                  >
+                    <span className="font-mono">{c.categoryReference}</span> — {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <Button
+            size="sm"
+            className="cta-primary rounded-none"
+            disabled={!newMap.category || !newMap.cdiscount_code}
+            onClick={async () => { await saveMapping(); setCodeSearch(""); }}
+          >
+            Ajouter / mettre à jour
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Octopia ne propose pas de recherche texte native : cette liste vient d'un cache local de ~8000 catégories.
+          <Button size="sm" variant="link" className="px-1 h-auto text-xs" onClick={async () => {
+            try { const { data } = await authAxios.post("/admin/cdiscount/categories/refresh"); toast.success(`${data.count} catégories rechargées`); } catch (e) { toast.error("Erreur de rechargement"); }
+          }}>Recharger la liste depuis Cdiscount</Button>
+        </p>
+      </div>
+
+      <div>
+        <h2 className="display text-xl font-bold mb-2">Mode de livraison par catégorie</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Par défaut, tous les produits partent en livraison à domicile suivie (THD, 0€). Pour les catégories qui doivent être
+          retirées en magasin (ex : Fatbike), associez-leur un mode de retrait — le client ne verra plus l'option livraison à domicile sur Cdiscount pour ces produits.
+        </p>
+        <div className="border border-border overflow-x-auto mb-3">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary"><tr>
+              <th className="text-left p-3">Catégorie</th><th className="text-left p-3">Mode</th>
+              <th className="text-left p-3">Coût 1ère unité</th><th className="text-left p-3">Coût unité suppl.</th><th></th>
+            </tr></thead>
+            <tbody>
+              {deliveryMap.map(d => (
+                <tr key={d.category} className="border-t border-border">
+                  <td className="p-3">{d.category}</td>
+                  <td className="p-3 font-mono text-xs">{d.code}</td>
+                  <td className="p-3">{Number(d.cost).toFixed(2)} €</td>
+                  <td className="p-3">{Number(d.additional_cost).toFixed(2)} €</td>
+                  <td className="p-3 text-right"><Button size="sm" variant="ghost" onClick={() => deleteDelivery(d.category)}><Trash2 className="w-4 h-4" /></Button></td>
+                </tr>
+              ))}
+              {deliveryMap.length === 0 && (
+                <tr><td colSpan={5} className="p-3 text-muted-foreground text-center">Aucune catégorie en retrait/livraison spécifique — tout part en THD par défaut.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div>
+            <Label className="text-xs">Catégorie du site</Label>
+            <Select value={newDelivery.category} onValueChange={v => setNewDelivery({ ...newDelivery, category: v })}>
+              <SelectTrigger className="w-56 h-9 rounded-none text-xs"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+              <SelectContent>
+                {allCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Mode de livraison</Label>
+            <Select value={newDelivery.code} onValueChange={v => setNewDelivery({ ...newDelivery, code: v })}>
+              <SelectTrigger className="w-64 h-9 rounded-none text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CDISCOUNT_DELIVERY_CODES.map(d => <SelectItem key={d.code} value={d.code}>{d.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Coût 1ère unité (€)</Label>
+            <Input type="number" step="0.01" className="w-28 h-9 rounded-none text-xs" value={newDelivery.cost} onChange={e => setNewDelivery({ ...newDelivery, cost: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs">Coût unité suppl. (€)</Label>
+            <Input type="number" step="0.01" className="w-28 h-9 rounded-none text-xs" value={newDelivery.additional_cost} onChange={e => setNewDelivery({ ...newDelivery, additional_cost: e.target.value })} />
+          </div>
+          <Button size="sm" className="cta-primary rounded-none" onClick={saveDelivery}>Ajouter / mettre à jour</Button>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
+          <h2 className="display text-xl font-bold mb-0">Export GTIN pour GS1</h2>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Génère un GTIN pour chaque produit qui n'en a pas encore (hors accessoires revendus issus du scrape iMooving,
+          repérés par leur SKU <code>IMV-*</code>), puis télécharge le modèle officiel GS1 (xlsx) rempli, prêt à importer tel quel
+          dans votre espace membre GS1 (myGS1 / CodeOnline) pour les déclarer — l'API GS1 publique ne permet pas de le faire automatiquement.
+        </p>
+
+        <div className="border border-border overflow-x-auto mb-3">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary"><tr><th className="text-left p-3">Catégorie (site)</th><th className="text-left p-3">Code catégorie GS1 (CodeOnline)</th><th></th></tr></thead>
+            <tbody>
+              {gs1CategoryMap.map(m => (
+                <tr key={m.category} className="border-t border-border">
+                  <td className="p-3">{m.category}</td>
+                  <td className="p-3 font-mono">{m.gs1_code}</td>
+                  <td className="p-3 text-right"><Button size="sm" variant="ghost" onClick={() => deleteGs1Map(m.category)}><Trash2 className="w-4 h-4" /></Button></td>
+                </tr>
+              ))}
+              {gs1CategoryMap.length === 0 && (
+                <tr><td colSpan={3} className="p-3 text-muted-foreground text-center">
+                  Aucun mapping — la colonne "Code de la catégorie du produit" restera vide dans l'export (facultatif dans le modèle, mais recommandé).
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground mb-2">
+          Les codes catégorie GS1 sont différents de ceux de Cdiscount. Trouvez-les sur{" "}
+          <a className="underline" href="https://codeonline-gtin.gs1.fr/dashboard/product/categories" target="_blank" rel="noreferrer">
+            codeonline-gtin.gs1.fr
+          </a> (espace membre, connexion requise) puis reportez-les ici.
+        </p>
+        <div className="flex flex-wrap gap-2 items-end mb-8">
+          <div>
+            <Label className="text-xs">Catégorie du site</Label>
+            <Select value={newGs1Map.category} onValueChange={v => setNewGs1Map({ ...newGs1Map, category: v })}>
+              <SelectTrigger className="w-56 h-9 rounded-none text-xs"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+              <SelectContent>
+                {allCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Code catégorie GS1</Label>
+            <Input className="w-40 h-9 rounded-none text-xs" value={newGs1Map.gs1_code} onChange={e => setNewGs1Map({ ...newGs1Map, gs1_code: e.target.value })} placeholder="Ex: 10003242" />
+          </div>
+          <Button size="sm" className="cta-primary rounded-none" onClick={saveGs1Map}>Ajouter / mettre à jour</Button>
+        </div>
+
+        <div>
+          <Button onClick={doExportGs1Csv} disabled={exportingCsv} variant="outline" className="rounded-none" data-testid="gs1-export-csv-btn">
+            {exportingCsv ? "Génération..." : "Générer les GTIN manquants et exporter le modèle GS1 (xlsx)"}
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
+          <h2 className="display text-xl font-bold">Sélection des produits à envoyer ({visibleProducts.length} affiché{visibleProducts.length > 1 ? "s" : ""}, {selectedIds.length} sélectionné{selectedIds.length > 1 ? "s" : ""})</h2>
+          <div className="flex flex-wrap gap-2 items-center">
+            <label className="flex items-center gap-2 text-xs mr-2">
+              <input type="checkbox" checked={gs1OnlyFilter} onChange={e => setGs1OnlyFilter(e.target.checked)} />
+              Uniquement les produits déclarés GS1
+            </label>
+            <Select value={categoryPick} onValueChange={setCategoryPick}>
+              <SelectTrigger className="w-56 h-9 rounded-none text-xs"><SelectValue placeholder="Sélectionner par catégorie" /></SelectTrigger>
+              <SelectContent>
+                {allCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button size="sm" variant="outline" className="rounded-none" onClick={selectByCategory}>Ajouter cette catégorie</Button>
+            <Button size="sm" variant="ghost" onClick={clearSelection}>Vider la sélection</Button>
+          </div>
+        </div>
+
+        <div className="border border-border overflow-x-auto max-h-[480px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary sticky top-0"><tr>
+              <th className="p-3"></th>
+              <th className="text-left p-3">Nom</th>
+              <th className="text-left p-3">Catégories</th>
+              <th className="text-left p-3">Prix site</th>
+              <th className="text-left p-3">Prix Cdiscount (+20%)</th>
+              <th className="text-left p-3">GTIN</th>
+              <th className="text-left p-3">Dernier envoi</th>
+            </tr></thead>
+            <tbody>
+              {visibleProducts.map(p => {
+                const basePrice = p.sale_price || p.price || 0;
+                const exp = exportByProduct[p.id];
+                const categoryOk = (p.categories || []).some(c => mappedCategories.has(c));
+                return (
+                  <tr key={p.id} className="border-t border-border">
+                    <td className="p-3"><input type="checkbox" checked={!!selected[p.id]} onChange={() => toggle(p.id)} /></td>
+                    <td className="p-3">{p.name}</td>
+                    <td className="p-3 text-xs text-muted-foreground">{(p.categories || []).join(", ") || "—"}</td>
+                    <td className="p-3">{basePrice.toFixed(2)} €</td>
+                    <td className="p-3">{(basePrice * CDISCOUNT_MARKUP).toFixed(2)} €</td>
+                    <td className="p-3 text-xs">{p.gtin ? <span className="font-mono">{p.gtin}</span> : <span className="text-destructive">manquant</span>}</td>
+                    <td className="p-3 text-xs">
+                      {exp ? (
+                        <>
+                          <span className={["error", "refused"].includes(exp.status) ? "text-destructive" : exp.status === "integrated" ? "text-green-600" : "text-amber-600"}>
+                            {{
+                              submitted: "Envoyé (statut réel non vérifié)",
+                              integrated: "Intégré chez Cdiscount",
+                              refused: "Refusé par Cdiscount",
+                              already_listed: "Déjà publié (manuel)",
+                            }[exp.status] || exp.status || "Échec"} · {new Date(exp.pushed_at).toLocaleString("fr-FR")}
+                          </span>
+                          {exp.cdiscount_errors?.length > 0 && (
+                            <div className="text-destructive mt-1">{exp.cdiscount_errors.join(" / ")}</div>
+                          )}
+                        </>
+                      ) : "—"}
+                      {!categoryOk && <div className="text-destructive">catégorie non mappée</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={doGenerateGtins} disabled={generatingGtin || selectedIds.length === 0} variant="outline" className="rounded-none" data-testid="cdiscount-generate-gtin-btn">
+            {generatingGtin ? "Génération..." : "Générer les GTIN manquants (sélection)"}
+          </Button>
+          <Button onClick={doPush} disabled={pushing || selectedIds.length === 0} className="cta-primary rounded-none" data-testid="cdiscount-push-btn">
+            {pushing ? "Envoi en cours..." : `Envoyer ${selectedIds.length || ""} produit(s) vers Cdiscount`}
+          </Button>
+          <Button onClick={doCheckStatus} disabled={checkingStatus} variant="outline" className="rounded-none" data-testid="cdiscount-check-status-btn">
+            {checkingStatus ? "Vérification..." : "Vérifier le statut réel chez Cdiscount"}
+          </Button>
+        </div>
+
+        {lastResults && (
+          <div className="border border-border mt-4 p-4 space-y-2">
+            <h3 className="font-bold text-sm">Résultat du dernier envoi</h3>
+            {lastResults.map(r => (
+              <div key={r.product_id} className={`text-xs flex items-center gap-2 ${r.ok ? "text-green-600" : "text-destructive"}`}>
+                {r.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                <span className="font-medium">{r.name || r.product_id}</span>
+                {r.ok ? <span>— envoyé à {r.price_sent} €</span> : <span>— {r.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
