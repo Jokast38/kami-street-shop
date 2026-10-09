@@ -551,6 +551,9 @@ function BlogPanel({ items, authAxios, reload }) {
   const [editing, setEditing] = useState(null);
   const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true };
   const [form, setForm] = useState(empty);
+  const [uploadingFeatured, setUploadingFeatured] = useState(false);
+  const [uploadingContent, setUploadingContent] = useState(false);
+  const contentRef = React.useRef(null);
 
   const save = async () => {
     try {
@@ -561,6 +564,52 @@ function BlogPanel({ items, authAxios, reload }) {
     } catch { toast.error("Erreur"); }
   };
   const del = async (id) => { if (confirm("Supprimer ?")) { await authAxios.delete(`/admin/blog/${id}`); toast.success("Supprimé"); reload(); } };
+
+  const uploadFeaturedImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFeatured(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await authAxios.post("/admin/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setForm(f => ({ ...f, featured_image: data.url }));
+      toast.success("Image envoyée");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur lors de l'envoi de l'image");
+    } finally {
+      setUploadingFeatured(false);
+      e.target.value = "";
+    }
+  };
+
+  // Uploads an image and inserts its <img> tag into the content HTML at the cursor
+  // position, so the editor isn't limited to pasting in already-hosted image URLs.
+  const uploadContentImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingContent(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await authAxios.post("/admin/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const tag = `<img src="${data.url}" alt="" />`;
+      const el = contentRef.current;
+      const pos = el ? el.selectionStart : form.content.length;
+      setForm(f => ({ ...f, content: f.content.slice(0, pos) + tag + f.content.slice(pos) }));
+      toast.success("Image insérée dans le contenu");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Erreur lors de l'envoi de l'image");
+    } finally {
+      setUploadingContent(false);
+      e.target.value = "";
+    }
+  };
+
+  // "Lecture de lien images" — pulls out every <img src="..."> already present in the
+  // pasted/typed content so the admin can see at a glance which images the article
+  // actually references, without having to read the raw HTML.
+  const contentImageUrls = [...(form.content || "").matchAll(/<img[^>]+src=["']([^"']+)["']/gi)].map(m => m[1]);
 
   return (
     <div>
@@ -590,8 +639,45 @@ function BlogPanel({ items, authAxios, reload }) {
           <div className="space-y-3">
             <div><Label>Titre</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
             <div><Label>Extrait</Label><Textarea rows={2} value={form.excerpt} onChange={e => setForm({ ...form, excerpt: e.target.value })} /></div>
-            <div><Label>Image (URL)</Label><Input value={form.featured_image || ""} onChange={e => setForm({ ...form, featured_image: e.target.value })} /></div>
-            <div><Label>Contenu (HTML)</Label><Textarea rows={10} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} /></div>
+            <div>
+              <Label>Image mise en avant</Label>
+              <div className="flex gap-2 items-start mt-1">
+                {form.featured_image && (
+                  <img src={form.featured_image} alt="" className="w-16 h-16 object-cover border border-border shrink-0" />
+                )}
+                <div className="flex-1 space-y-2">
+                  <Input value={form.featured_image || ""} onChange={e => setForm({ ...form, featured_image: e.target.value })} placeholder="URL de l'image, ou envoyez un fichier" />
+                  <label className="inline-block">
+                    <input type="file" accept="image/*" className="hidden" onChange={uploadFeaturedImage} disabled={uploadingFeatured} data-testid="blog-featured-image-upload-input" />
+                    <span className="text-xs border border-border px-3 py-1.5 cursor-pointer inline-block hover:bg-secondary">
+                      {uploadingFeatured ? "Envoi..." : "Choisir un fichier"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between items-center">
+                <Label>Contenu (HTML)</Label>
+                <label className="inline-block">
+                  <input type="file" accept="image/*" className="hidden" onChange={uploadContentImage} disabled={uploadingContent} data-testid="blog-content-image-upload-input" />
+                  <span className="text-xs border border-border px-3 py-1.5 cursor-pointer inline-block hover:bg-secondary">
+                    {uploadingContent ? "Envoi..." : "Insérer une image"}
+                  </span>
+                </label>
+              </div>
+              <Textarea ref={contentRef} rows={10} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
+              {contentImageUrls.length > 0 && (
+                <div className="mt-2">
+                  <Label className="text-xs text-muted-foreground">Images détectées dans le contenu ({contentImageUrls.length})</Label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {contentImageUrls.map((url, i) => (
+                      <img key={i} src={url} alt="" className="w-12 h-12 object-cover border border-border" title={url} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2"><Switch checked={form.published} onCheckedChange={v => setForm({ ...form, published: v })} /> <Label>Publié</Label></div>
             <Button onClick={save} className="cta-primary rounded-none w-full">Enregistrer</Button>
           </div>
