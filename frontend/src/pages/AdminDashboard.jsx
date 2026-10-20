@@ -15,6 +15,8 @@ import { LogOut, RefreshCw, Plus, Trash2, Edit, Package, ShoppingCart, FileText,
 import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
+const stripHtml = (html) => (html || "").replace(/<[^>]+>/g, "").trim();
+
 export default function AdminDashboard() {
   const { email, role, logout, authAxios } = useAuth();
   const isAdmin = role === "admin";
@@ -549,7 +551,7 @@ function OrdersPanel({ items, authAxios, reload }) {
 function BlogPanel({ items, authAxios, reload }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true, seo_keyword: "" };
+  const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true, seo_keyword: "", faq: [] };
   const [form, setForm] = useState(empty);
   const [uploadingFeatured, setUploadingFeatured] = useState(false);
   const [uploadingContent, setUploadingContent] = useState(false);
@@ -588,15 +590,32 @@ function BlogPanel({ items, authAxios, reload }) {
   const uploadContentImage = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Capture the cursor position *before* the upload/await: opening the native file
+    // picker moves focus off the textarea, and by the time the upload finishes
+    // selectionStart can no longer be trusted to reflect where the admin actually
+    // placed the cursor — it would silently fall back to 0 and drop the image at the
+    // very start of the article instead of the intended paragraph.
+    const el = contentRef.current;
+    const pos = el ? el.selectionStart : form.content.length;
     setUploadingContent(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const { data } = await authAxios.post("/admin/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      const tag = `<img src="${data.url}" alt="" />`;
-      const el = contentRef.current;
-      const pos = el ? el.selectionStart : form.content.length;
-      setForm(f => ({ ...f, content: f.content.slice(0, pos) + tag + f.content.slice(pos) }));
+      const before = form.content.slice(0, pos);
+      const after = form.content.slice(pos);
+      // Insert as its own block on its own line rather than glued mid-sentence, so the
+      // image lands as a clean paragraph break at the chosen spot instead of splitting
+      // surrounding text.
+      const leadingBreak = before && !before.endsWith("\n") ? "\n\n" : "";
+      const trailingBreak = after && !after.startsWith("\n") ? "\n\n" : "";
+      const tag = `${leadingBreak}<img src="${data.url}" alt="" />${trailingBreak}`;
+      const newContent = before + tag + after;
+      setForm(f => ({ ...f, content: newContent }));
+      const newCursorPos = pos + tag.length;
+      requestAnimationFrame(() => {
+        if (el) { el.focus(); el.setSelectionRange(newCursorPos, newCursorPos); }
+      });
       toast.success("Image insérée dans le contenu");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Erreur lors de l'envoi de l'image");
@@ -606,10 +625,63 @@ function BlogPanel({ items, authAxios, reload }) {
     }
   };
 
-  // "Lecture de lien images" — pulls out every <img src="..."> already present in the
-  // pasted/typed content so the admin can see at a glance which images the article
-  // actually references, without having to read the raw HTML.
-  const contentImageUrls = [...(form.content || "").matchAll(/<img[^>]+src=["']([^"']+)["']/gi)].map(m => m[1]);
+  // "Lecture de lien images" — pulls out every <img> already present in the pasted/typed
+  // content (with its src, current alt text, and position) so the admin can see at a
+  // glance which images the article references and fill in alt text per image, without
+  // having to hand-edit the raw HTML.
+  const contentImages = [...(form.content || "").matchAll(/<img[^>]*>/gi)].map(m => {
+    const tag = m[0];
+    const srcMatch = tag.match(/src=["']([^"']*)["']/i);
+    const altMatch = tag.match(/alt=["']([^"']*)["']/i);
+    return { tag, src: srcMatch ? srcMatch[1] : "", alt: altMatch ? altMatch[1] : "", index: m.index };
+  });
+
+  const updateContentImageAlt = (idx, newAlt) => {
+    const img = contentImages[idx];
+    if (!img) return;
+    const escaped = newAlt.replace(/"/g, "&quot;");
+    const newTag = /alt=["'][^"']*["']/i.test(img.tag)
+      ? img.tag.replace(/alt=["'][^"']*["']/i, `alt="${escaped}"`)
+      : img.tag.replace(/<img/i, `<img alt="${escaped}"`);
+    setForm(f => ({ ...f, content: f.content.slice(0, img.index) + newTag + f.content.slice(img.index + img.tag.length) }));
+  };
+
+  const addFaqItem = () => setForm(f => ({ ...f, faq: [...(f.faq || []), { question: "", answer: "" }] }));
+  const updateFaqItem = (idx, field, value) => setForm(f => ({ ...f, faq: f.faq.map((item, i) => i === idx ? { ...item, [field]: value } : item) }));
+  const removeFaqItem = (idx) => setForm(f => ({ ...f, faq: f.faq.filter((_, i) => i !== idx) }));
+
+  // Checklist mirrors the on-page signals an editor actually controls — it's a guide
+  // for the writer, not a real ranking predictor, so each check is a simple presence
+  // test rather than anything that tries to score relevance or quality.
+  const seoChecklist = (() => {
+    const keyword = (form.seo_keyword || "").trim().toLowerCase();
+    const plainTitle = stripHtml(form.title || "").toLowerCase();
+    const plainExcerpt = (form.excerpt || "").toLowerCase();
+    const plainContent = stripHtml(form.content || "");
+    const plainContentLower = plainContent.toLowerCase();
+    const slug = (form.slug || "").toLowerCase();
+    const h2Matches = [...(form.content || "").matchAll(/<h2[^>]*>(.*?)<\/h2>/gis)].map(m => stripHtml(m[1]).toLowerCase());
+    const introText = plainContent.slice(0, 300).toLowerCase();
+    const altTexts = contentImages.map(img => (img.alt || "").toLowerCase());
+    const wordCount = plainContent.split(/\s+/).filter(Boolean).length;
+    const links = [...(form.content || "").matchAll(/<a[^>]+href=["']([^"']+)["']/gi)].map(m => m[1]);
+    const internalLinks = links.filter(href => href.startsWith("/") || href.includes("kamistreet.fr"));
+    const externalLinks = links.filter(href => !internalLinks.includes(href) && /^https?:\/\//i.test(href));
+
+    const hasKeyword = keyword.length > 0;
+    return [
+      { label: "Mot-clé dans le titre", ok: hasKeyword && plainTitle.includes(keyword) },
+      { label: "Mot-clé dans l'URL (slug)", ok: hasKeyword && slug.includes(keyword.replace(/\s+/g, "-")) },
+      { label: "Mot-clé dans la meta description", ok: hasKeyword && plainExcerpt.includes(keyword) },
+      { label: "Mot-clé dans l'introduction", ok: hasKeyword && introText.includes(keyword) },
+      { label: "Mot-clé dans au moins un H2", ok: hasKeyword && h2Matches.some(h => h.includes(keyword)) },
+      { label: "Mot-clé dans au moins un texte alternatif d'image", ok: hasKeyword && altTexts.some(a => a.includes(keyword)) },
+      { label: "Contenu suffisamment long (300 mots min.)", ok: wordCount >= 300 },
+      { label: "Au moins un lien interne", ok: internalLinks.length > 0 },
+      { label: "Au moins un lien externe", ok: externalLinks.length > 0 },
+    ];
+  })();
+  const seoScore = Math.round((seoChecklist.filter(c => c.ok).length / seoChecklist.length) * 100);
 
   return (
     <div>
@@ -625,7 +697,7 @@ function BlogPanel({ items, authAxios, reload }) {
               <div className="font-bold" dangerouslySetInnerHTML={{ __html: b.title }} />
               <div className="text-xs text-muted-foreground line-clamp-2 mt-1">{b.excerpt}</div>
               <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="ghost" onClick={() => { setEditing(b); setForm(b); setOpen(true); }}><Edit className="w-3 h-3" /></Button>
+                <Button size="sm" variant="ghost" onClick={() => { setEditing(b); setForm({ ...b, faq: b.faq || [] }); setOpen(true); }}><Edit className="w-3 h-3" /></Button>
                 <Button size="sm" variant="ghost" onClick={() => del(b.id)}><Trash2 className="w-3 h-3" /></Button>
               </div>
             </div>
@@ -679,6 +751,12 @@ function BlogPanel({ items, authAxios, reload }) {
                       {uploadingFeatured ? "Envoi..." : "Choisir un fichier"}
                     </span>
                   </label>
+                  <Input
+                    value={form.featured_image_alt || ""}
+                    onChange={e => setForm({ ...form, featured_image_alt: e.target.value })}
+                    placeholder="Texte alternatif (alt) de l'image mise en avant"
+                    data-testid="blog-featured-image-alt-input"
+                  />
                 </div>
               </div>
             </div>
@@ -693,15 +771,70 @@ function BlogPanel({ items, authAxios, reload }) {
                 </label>
               </div>
               <Textarea ref={contentRef} rows={10} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
-              {contentImageUrls.length > 0 && (
-                <div className="mt-2">
-                  <Label className="text-xs text-muted-foreground">Images détectées dans le contenu ({contentImageUrls.length})</Label>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {contentImageUrls.map((url, i) => (
-                      <img key={i} src={url} alt="" className="w-12 h-12 object-cover border border-border" title={url} />
-                    ))}
-                  </div>
+              {contentImages.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  <Label className="text-xs text-muted-foreground">Images détectées dans le contenu ({contentImages.length}) — texte alternatif (alt)</Label>
+                  {contentImages.map((img, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                      <img src={img.src} alt="" className="w-12 h-12 object-cover border border-border shrink-0" title={img.src} />
+                      <Input
+                        className="flex-1"
+                        value={img.alt}
+                        onChange={e => updateContentImageAlt(i, e.target.value)}
+                        placeholder={`Texte alternatif de l'image ${i + 1}`}
+                        data-testid={`blog-content-image-alt-input-${i}`}
+                      />
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+            <div>
+              <div className="flex justify-between items-center">
+                <Label>FAQ de l'article (balisage schema FAQ)</Label>
+                <Button type="button" size="sm" variant="outline" className="rounded-none" onClick={addFaqItem}><Plus className="w-3 h-3 mr-1" />Ajouter une question</Button>
+              </div>
+              {(form.faq || []).length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">Aucune question pour l'instant.</p>
+              )}
+              <div className="space-y-3 mt-2">
+                {(form.faq || []).map((item, i) => (
+                  <div key={i} className="border border-border p-3 space-y-2 relative" data-testid={`blog-faq-item-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => removeFaqItem(i)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center text-xs"
+                      aria-label="Supprimer la question"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    <div>
+                      <Label className="text-xs">Question</Label>
+                      <Input value={item.question} onChange={e => updateFaqItem(i, "question", e.target.value)} placeholder="Ex: Quelle autonomie pour un fatbike électrique ?" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Réponse</Label>
+                      <Textarea rows={2} value={item.answer} onChange={e => updateFaqItem(i, "answer", e.target.value)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border border-border p-3" data-testid="blog-seo-score">
+              <div className="flex justify-between items-center mb-2">
+                <Label>Score SEO</Label>
+                <span className={`font-bold ${seoScore >= 80 ? "text-green-600" : seoScore >= 50 ? "text-amber-600" : "text-destructive"}`}>{seoScore}%</span>
+              </div>
+              <ul className="space-y-1">
+                {seoChecklist.map((item, i) => (
+                  <li key={i} className={`text-xs flex items-center gap-2 ${item.ok ? "text-green-600" : "text-muted-foreground"}`}>
+                    {item.ok ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <XCircle className="w-3.5 h-3.5 shrink-0" />}
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+              {!form.seo_keyword && (
+                <p className="text-xs text-amber-600 mt-2">Renseignez un mot-clé principal pour activer les vérifications associées.</p>
               )}
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.published} onCheckedChange={v => setForm({ ...form, published: v })} /> <Label>Publié</Label></div>

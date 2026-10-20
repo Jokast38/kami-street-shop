@@ -27,7 +27,9 @@ export default function SEO({ title, description, path = "", image, type = "webs
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={ogImage} />
 
-      {jsonLd && <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>}
+      {jsonLd && (Array.isArray(jsonLd) ? jsonLd : [jsonLd]).map((block, i) => (
+        <script key={i} type="application/ld+json">{JSON.stringify(block)}</script>
+      ))}
     </Helmet>
   );
 }

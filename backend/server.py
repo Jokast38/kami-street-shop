@@ -277,15 +277,22 @@ class PromoCodeIn(BaseModel):
     active: bool = True
 
 
+class FaqItem(BaseModel):
+    question: str
+    answer: str
+
+
 class BlogIn(BaseModel):
     title: str
     slug: Optional[str] = None
     content: str
     excerpt: str = ""
     featured_image: Optional[str] = None
+    featured_image_alt: Optional[str] = None
     categories: List[str] = []
     published: bool = True
     seo_keyword: Optional[str] = None
+    faq: List[FaqItem] = []
 
 
 class BannerIn(BaseModel):
@@ -789,9 +796,12 @@ async def list_blog(limit: int = 50):
 @api.get("/blog/{slug}")
 async def get_blog(slug: str):
     p = await db.blog.find_one({"slug": slug, "published": True}, {"_id": 0})
-    if not p:
-        raise HTTPException(404, "Article introuvable")
-    return p
+    if p:
+        return p
+    redirect = await db.blog_redirects.find_one({"old_slug": slug}, {"_id": 0})
+    if redirect:
+        return {"redirect": redirect["new_slug"]}
+    raise HTTPException(404, "Article introuvable")
 
 
 GOOGLE_REVIEWS_CACHE_ID = "google_reviews_cache"
@@ -1261,11 +1271,26 @@ async def create_blog(body: BlogIn, user=Depends(current_staff)):
 
 @api.put("/admin/blog/{bid}")
 async def update_blog(bid: str, body: BlogIn, user=Depends(current_staff)):
+    existing = await db.blog.find_one({"id": bid}, {"_id": 0, "slug": 1})
     upd = body.model_dump()
     upd["slug"] = upd.get("slug") or slugify(body.title)
     r = await db.blog.update_one({"id": bid}, {"$set": upd})
     if r.matched_count == 0:
         raise HTTPException(404, "Not found")
+
+    old_slug = (existing or {}).get("slug")
+    new_slug = upd["slug"]
+    if old_slug and old_slug != new_slug:
+        # Repoint any redirect that used to target old_slug straight at new_slug, so
+        # renaming a slug twice doesn't chain (A -> B -> C becomes A -> C, B -> C)
+        # instead of requiring two hops to resolve.
+        await db.blog_redirects.update_many({"new_slug": old_slug}, {"$set": {"new_slug": new_slug}})
+        await db.blog_redirects.update_one(
+            {"old_slug": old_slug},
+            {"$set": {"old_slug": old_slug, "new_slug": new_slug, "created_at": now_iso()}},
+            upsert=True,
+        )
+        await db.blog_redirects.delete_one({"old_slug": new_slug})  # avoid a self/cyclical redirect
     return {"ok": True}
 
 
