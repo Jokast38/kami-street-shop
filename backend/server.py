@@ -24,7 +24,8 @@ from fastapi.security import OAuth2PasswordBearer
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from bson import ObjectId
 from pydantic import BaseModel, Field, EmailStr
 import uuid
 import time
@@ -122,6 +123,7 @@ client = AsyncIOMotorClient(
     socketTimeoutMS=int(os.environ.get("MONGO_SOCKET_TIMEOUT_MS", "10000")),
 )
 db = client[DB_NAME]
+images_gridfs = AsyncIOMotorGridFSBucket(db, bucket_name="images")
 
 # App
 app = FastAPI(title="Kami Street API")
@@ -283,6 +285,7 @@ class BlogIn(BaseModel):
     featured_image: Optional[str] = None
     categories: List[str] = []
     published: bool = True
+    seo_keyword: Optional[str] = None
 
 
 class BannerIn(BaseModel):
@@ -2833,28 +2836,52 @@ async def _wp_get(path: str, params: dict = None, auth: bool = True):
         return r.json()
 
 
+ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+
+
 @api.post("/admin/uploads/image")
 async def upload_product_image(file: UploadFile = File(...), user=Depends(current_staff)):
-    """Uploads an image to the WordPress media library (same host as existing product
-    images) and returns its public URL, so it can be added to a product's images list."""
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(400, "Le fichier doit être une image")
+    """Stores the image directly in MongoDB (GridFS) and returns a URL served by this
+    backend. Previously this proxied to the WordPress media library, but that host
+    (Hostinger free hosting) turned out to be an unreliable single point of failure —
+    uploads failed whenever it was unreachable, which also affected how/whether images
+    showed up in articles since everything depended on that external host staying up."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+        raise HTTPException(400, "Formats acceptés : JPG, PNG, WebP")
     contents = await file.read()
     if len(contents) > 8 * 1024 * 1024:
         raise HTTPException(400, "Image trop volumineuse (max 8 Mo)")
+    if len(contents) == 0:
+        raise HTTPException(400, "Fichier vide")
 
-    url = f"{WP_BASE}/wp-json/wp/v2/media"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{file.filename}"',
-        "Content-Type": file.content_type,
-        "User-Agent": "KamiStreet-Admin/1.0 (+https://kamistreet.fr)",
-    }
-    async with httpx.AsyncClient(timeout=60, auth=(WP_USER, WP_APP_PWD.replace(" ", ""))) as c:
-        r = await c.post(url, content=contents, headers=headers)
-        if r.status_code >= 400:
-            raise HTTPException(502, f"Erreur upload WordPress: {r.status_code} {r.text[:200]}")
-        media = r.json()
-    return {"url": media.get("source_url"), "id": media.get("id")}
+    file_id = await images_gridfs.upload_from_stream(
+        file.filename or "image",
+        contents,
+        metadata={"content_type": content_type},
+    )
+    return {"url": f"{BACKEND_URL}/uploads/{file_id}", "id": str(file_id)}
+
+
+@app.get("/uploads/{file_id}")
+async def serve_uploaded_image(file_id: str):
+    from fastapi.responses import StreamingResponse
+
+    try:
+        oid = ObjectId(file_id)
+    except Exception:
+        raise HTTPException(404, "Image introuvable")
+    try:
+        stream = await images_gridfs.open_download_stream(oid)
+    except Exception:
+        raise HTTPException(404, "Image introuvable")
+    content_type = (stream.metadata or {}).get("content_type", "application/octet-stream")
+    contents = await stream.read()
+    return StreamingResponse(
+        iter([contents]),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @api.post("/admin/sync/woocommerce")

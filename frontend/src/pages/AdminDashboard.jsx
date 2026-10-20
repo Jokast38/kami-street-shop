@@ -549,7 +549,7 @@ function OrdersPanel({ items, authAxios, reload }) {
 function BlogPanel({ items, authAxios, reload }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true };
+  const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true, seo_keyword: "" };
   const [form, setForm] = useState(empty);
   const [uploadingFeatured, setUploadingFeatured] = useState(false);
   const [uploadingContent, setUploadingContent] = useState(false);
@@ -637,8 +637,34 @@ function BlogPanel({ items, authAxios, reload }) {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? "Modifier" : "Nouvel"} article</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>Titre</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
-            <div><Label>Extrait</Label><Textarea rows={2} value={form.excerpt} onChange={e => setForm({ ...form, excerpt: e.target.value })} /></div>
+            <div>
+              <div className="flex justify-between items-baseline">
+                <Label>Titre (titre SEO)</Label>
+                <span className={`text-xs ${form.title.length > 60 ? "text-destructive" : "text-muted-foreground"}`}>{form.title.length} / 60</span>
+              </div>
+              <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+            </div>
+            <div>
+              <div className="flex justify-between items-baseline">
+                <Label>Extrait (meta description)</Label>
+                <span className={`text-xs ${form.excerpt.length > 160 ? "text-destructive" : "text-muted-foreground"}`}>{form.excerpt.length} / 160</span>
+              </div>
+              <Textarea rows={2} value={form.excerpt} onChange={e => setForm({ ...form, excerpt: e.target.value })} />
+            </div>
+            <div>
+              <Label>Mot-clé principal (SEO)</Label>
+              <Input value={form.seo_keyword || ""} onChange={e => setForm({ ...form, seo_keyword: e.target.value })} placeholder="Ex: fatbike électrique" data-testid="blog-seo-keyword-input" />
+            </div>
+            {(form.title || form.excerpt) && (
+              <div className="border border-border p-3 bg-secondary/40">
+                <Label className="text-xs text-muted-foreground">Aperçu Google</Label>
+                <div className="mt-1 font-sans">
+                  <div className="text-xs text-muted-foreground">kamistreet.fr › blog › {(form.slug || "votre-article")}</div>
+                  <div className="text-[#1a0dab] text-lg leading-tight truncate">{form.title || "Titre de l'article"}</div>
+                  <div className="text-sm text-[#4d5156] line-clamp-2">{form.excerpt || "La meta description apparaîtra ici."}</div>
+                </div>
+              </div>
+            )}
             <div>
               <Label>Image mise en avant</Label>
               <div className="flex gap-2 items-start mt-1">
