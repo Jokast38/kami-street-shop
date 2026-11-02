@@ -3106,7 +3106,7 @@ async def sync_woo_orders(user=Depends(current_staff)):
                                 2,
                             ),
                             "quantity": li.get("quantity", 1),
-                            "image": (li.get("image") or {}).get("src"),
+                            "image": await mirror_image_to_supabase((li.get("image") or {}).get("src")),
                         }
                         for li in o.get("line_items", [])
                     ],
