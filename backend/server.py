@@ -24,8 +24,7 @@ from fastapi.security import OAuth2PasswordBearer
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 import uuid
 import time
@@ -112,6 +111,9 @@ _cdiscount_token_cache = {"token": None, "expires_at": 0.0}
 # host if not set explicitly, since that one is already known to be publicly reachable.
 BACKEND_URL = os.environ.get("BACKEND_URL") or QONTO_REDIRECT_URI.split("/api/")[0]
 
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
+
 GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 GOOGLE_PLACE_ID = os.environ.get("GOOGLE_PLACE_ID", "")
 
@@ -123,7 +125,6 @@ client = AsyncIOMotorClient(
     socketTimeoutMS=int(os.environ.get("MONGO_SOCKET_TIMEOUT_MS", "10000")),
 )
 db = client[DB_NAME]
-images_gridfs = AsyncIOMotorGridFSBucket(db, bucket_name="images")
 
 # App
 app = FastAPI(title="Kami Street API")
@@ -2862,15 +2863,32 @@ async def _wp_get(path: str, params: dict = None, auth: bool = True):
 
 
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+SUPABASE_STORAGE_BUCKET = "images"
+
+
+async def upload_to_supabase_storage(contents: bytes, content_type: str, filename: str) -> str:
+    """Uploads raw image bytes to the Supabase Storage "images" bucket and returns its
+    public URL. Images used to go to MongoDB (GridFS), but that's a 512MB-quota shared
+    cluster that also holds all application data — a batch of image uploads filled it
+    and blocked every write on the site (orders included). Object storage is the right
+    place for binary blobs; the database should hold references to them, not the bytes."""
+    ext = (filename.rsplit(".", 1)[-1] if "." in filename else content_type.split("/")[-1]).lower()
+    path = f"{uuid.uuid4()}.{ext}"
+    headers = {
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": content_type,
+    }
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{path}", headers=headers, content=contents)
+        if r.status_code >= 400:
+            raise HTTPException(502, f"Erreur upload Supabase Storage: {r.status_code} {r.text[:200]}")
+    return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/{path}"
 
 
 @api.post("/admin/uploads/image")
 async def upload_product_image(file: UploadFile = File(...), user=Depends(current_staff)):
-    """Stores the image directly in MongoDB (GridFS) and returns a URL served by this
-    backend. Previously this proxied to the WordPress media library, but that host
-    (Hostinger free hosting) turned out to be an unreliable single point of failure —
-    uploads failed whenever it was unreachable, which also affected how/whether images
-    showed up in articles since everything depended on that external host staying up."""
+    """Uploads the image to Supabase Storage and returns its public URL."""
     content_type = (file.content_type or "").lower()
     if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
         raise HTTPException(400, "Formats acceptés : JPG, PNG, WebP")
@@ -2880,33 +2898,8 @@ async def upload_product_image(file: UploadFile = File(...), user=Depends(curren
     if len(contents) == 0:
         raise HTTPException(400, "Fichier vide")
 
-    file_id = await images_gridfs.upload_from_stream(
-        file.filename or "image",
-        contents,
-        metadata={"content_type": content_type},
-    )
-    return {"url": f"{BACKEND_URL}/uploads/{file_id}", "id": str(file_id)}
-
-
-@app.get("/uploads/{file_id}")
-async def serve_uploaded_image(file_id: str):
-    from fastapi.responses import StreamingResponse
-
-    try:
-        oid = ObjectId(file_id)
-    except Exception:
-        raise HTTPException(404, "Image introuvable")
-    try:
-        stream = await images_gridfs.open_download_stream(oid)
-    except Exception:
-        raise HTTPException(404, "Image introuvable")
-    content_type = (stream.metadata or {}).get("content_type", "application/octet-stream")
-    contents = await stream.read()
-    return StreamingResponse(
-        iter([contents]),
-        media_type=content_type,
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
-    )
+    url = await upload_to_supabase_storage(contents, content_type, file.filename or "image")
+    return {"url": url}
 
 
 @api.post("/admin/sync/woocommerce")
@@ -3226,6 +3219,100 @@ async def migrate_image_domain(old_domain: str = "kamistreet.fr", user=Depends(c
                     updated[coll_name] += 1
 
     return {"ok": True, "new_base": new_base, "updated": updated}
+
+
+async def _migrate_image_url(client: httpx.AsyncClient, url: str, cache: dict) -> str:
+    """Downloads one externally-hosted image and re-uploads it to Supabase Storage,
+    returning the new public URL (or the original URL unchanged on any failure, so a
+    single broken/missing image never blocks the rest of the migration)."""
+    if url in cache:
+        return cache[url]
+    if not url.startswith(WP_BASE):
+        cache[url] = url
+        return url
+    try:
+        r = await client.get(url, timeout=30)
+        r.raise_for_status()
+        content_type = r.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+            cache[url] = url
+            return url
+        new_url = await upload_to_supabase_storage(r.content, content_type, url.rsplit("/", 1)[-1] or "image")
+        cache[url] = new_url
+        return new_url
+    except Exception:
+        cache[url] = url
+        return url
+
+
+@api.post("/admin/migrate/images-to-db")
+async def migrate_images_to_db(user=Depends(current_staff)):
+    """Downloads every image still hosted on the WordPress site (WP_BASE) and re-uploads
+    it to Supabase Storage (the same bucket /admin/uploads/image now writes to),
+    rewriting every reference so the site no longer depends on that external host
+    staying up. Covers product images/variations, category/brand images, and blog
+    featured images + any <img> tags inline in article content.
+    Runs with limited concurrency (not asyncio.gather-all-at-once) — a prior version of
+    this that fired every upload concurrently filled the (separate, MongoDB-side) image
+    store fast enough to blow through a shared cluster's storage quota before the loop
+    could even finish; Supabase Storage removes that specific risk, but there's no
+    reason to hammer the WP host with unbounded concurrent downloads either."""
+    cache: dict = {}
+    updated = {"products": 0, "categories": 0, "brands": 0, "blog": 0}
+
+    async with httpx.AsyncClient() as client:
+        async for p in db.products.find({}, {"_id": 0}):
+            changed = False
+            images = p.get("images") or []
+            new_images = [await _migrate_image_url(client, u, cache) for u in images]
+            if new_images != images:
+                changed = True
+            variations = p.get("variations") or []
+            new_variations = []
+            for v in variations:
+                if v.get("image"):
+                    new_img = await _migrate_image_url(client, v["image"], cache)
+                    if new_img != v["image"]:
+                        changed = True
+                    v = {**v, "image": new_img}
+                new_variations.append(v)
+            if changed:
+                await db.products.update_one({"id": p["id"]}, {"$set": {"images": new_images, "variations": new_variations}})
+                updated["products"] += 1
+
+        for coll_name in ("categories", "brands"):
+            coll = getattr(db, coll_name)
+            async for doc in coll.find({}, {"_id": 0}):
+                image = doc.get("image")
+                if image:
+                    new_image = await _migrate_image_url(client, image, cache)
+                    if new_image != image:
+                        await coll.update_one({"id": doc["id"]}, {"$set": {"image": new_image}})
+                        updated[coll_name] += 1
+
+        async for b in db.blog.find({}, {"_id": 0}):
+            changed = False
+            featured = b.get("featured_image")
+            new_featured = featured
+            if featured:
+                new_featured = await _migrate_image_url(client, featured, cache)
+                if new_featured != featured:
+                    changed = True
+
+            content = b.get("content") or ""
+            content_urls = {m.group(1) for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', content)}
+            new_content = content
+            for old_url in content_urls:
+                new_url = await _migrate_image_url(client, old_url, cache)
+                if new_url != old_url:
+                    new_content = new_content.replace(old_url, new_url)
+                    changed = True
+
+            if changed:
+                await db.blog.update_one({"id": b["id"]}, {"$set": {"featured_image": new_featured, "content": new_content}})
+                updated["blog"] += 1
+
+    return {"ok": True, "updated": updated, "images_processed": len(cache)}
 
 
 @api.get("/admin/sync/status")
