@@ -2886,6 +2886,55 @@ async def upload_to_supabase_storage(contents: bytes, content_type: str, filenam
     return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_STORAGE_BUCKET}/{path}"
 
 
+async def mirror_image_to_supabase(url: Optional[str]) -> Optional[str]:
+    """Downloads a WordPress-hosted image and re-uploads it to Supabase Storage, caching
+    the WP-URL -> Supabase-URL mapping in `image_mirror_cache` so it survives restarts.
+    sync_woo/sync_wp run on an automatic loop (WC_SYNC_INTERVAL_MINUTES, default 30min)
+    and used to write WooCommerce/WordPress's raw image src straight into our documents
+    on every run — silently reverting any migrated-to-Supabase image back to the WP host
+    a few minutes later. Routing every synced image through this closes that loop: once
+    an image is mirrored, every future sync reuses the cached Supabase URL instead of
+    writing the WP one back."""
+    if not url or not url.startswith(WP_BASE):
+        return url
+    cached = await db.image_mirror_cache.find_one({"source_url": url}, {"_id": 0, "mirrored_url": 1})
+    if cached:
+        return cached["mirrored_url"]
+    try:
+        async with httpx.AsyncClient(timeout=30) as hc:
+            r = await hc.get(url)
+            r.raise_for_status()
+            content_type = r.headers.get("content-type", "").split(";")[0].strip().lower()
+            if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
+                return url
+            new_url = await upload_to_supabase_storage(r.content, content_type, url.rsplit("/", 1)[-1] or "image")
+        await db.image_mirror_cache.update_one(
+            {"source_url": url}, {"$set": {"source_url": url, "mirrored_url": new_url}}, upsert=True
+        )
+        return new_url
+    except Exception as e:
+        logging.warning(f"mirror_image_to_supabase failed for {url}: {e}")
+        return url
+
+
+async def mirror_content_images(content: Optional[str]) -> Optional[str]:
+    """Same as mirror_image_to_supabase but for every <img src> inside a WP post's HTML
+    content, and strips srcset/sizes (WP's responsive size variants) since those aren't
+    mirrored and would otherwise still point the browser at the WP host for some widths."""
+    if not content:
+        return content
+    urls = {m.group(1) for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', content)}
+    new_content = content
+    for old_url in urls:
+        if old_url.startswith(WP_BASE):
+            new_url = await mirror_image_to_supabase(old_url)
+            if new_url != old_url:
+                new_content = new_content.replace(old_url, new_url)
+    new_content = re.sub(r'\s+srcset=["\'][^"\']*["\']', '', new_content)
+    new_content = re.sub(r'\s+sizes=["\'][^"\']*["\']', '', new_content)
+    return new_content
+
+
 @api.post("/admin/uploads/image")
 async def upload_product_image(file: UploadFile = File(...), user=Depends(current_staff)):
     """Uploads the image to Supabase Storage and returns its public URL."""
@@ -2922,7 +2971,7 @@ async def sync_woo(user=Depends(current_staff)):
                     "name": c["name"],
                     "slug": c["slug"],
                     "count": c.get("count", 0),
-                    "image": (c.get("image") or {}).get("src"),
+                    "image": await mirror_image_to_supabase((c.get("image") or {}).get("src")),
                     "description": c.get("description", ""),
                     "parent_woo_id": parent_woo_id,
                     "parent_slug": parent_slug,
@@ -2942,7 +2991,7 @@ async def sync_woo(user=Depends(current_staff)):
                         "name": b["name"],
                         "slug": b["slug"],
                         "count": b.get("count", 0),
-                        "image": (b.get("image") or {}).get("src"),
+                        "image": await mirror_image_to_supabase((b.get("image") or {}).get("src")),
                         "description": b.get("description", ""),
                     }},
                     upsert=True,
@@ -2976,7 +3025,7 @@ async def sync_woo(user=Depends(current_staff)):
                                 "sale_price": _woo_money(v.get("sale_price")),
                                 "stock": v.get("stock_quantity") or 0,
                                 "attributes": {a.get("name", ""): a.get("option", "") for a in v.get("attributes", [])},
-                                "image": (v.get("image") or {}).get("src"),
+                                "image": await mirror_image_to_supabase((v.get("image") or {}).get("src")),
                             })
                     except Exception as e:
                         logging.warning(f"variations err {p['id']}: {e}")
@@ -2996,7 +3045,7 @@ async def sync_woo(user=Depends(current_staff)):
                     "sku": p.get("sku") or "",
                     "categories": [c["slug"] for c in p.get("categories", [])],
                     "brands": [b["slug"] for b in p.get("brands", [])],
-                    "images": [img["src"] for img in p.get("images", []) if img.get("src")],
+                    "images": [await mirror_image_to_supabase(img["src"]) for img in p.get("images", []) if img.get("src")],
                     "variations": variations,
                     "featured": (existing_product or {}).get("featured", p.get("featured", False)),
                     "preorder": bool(meta.get("_imooving_source_id")),
@@ -3101,13 +3150,13 @@ async def sync_wp(user=Depends(current_staff)):
                 featured = None
                 emb = (p.get("_embedded") or {}).get("wp:featuredmedia") or []
                 if emb and emb[0].get("source_url"):
-                    featured = emb[0]["source_url"]
+                    featured = await mirror_image_to_supabase(emb[0]["source_url"])
                 doc = {
                     "id": str(p["id"]),
                     "wp_id": p["id"],
                     "title": decode_html((p.get("title") or {}).get("rendered", "")),
                     "slug": p.get("slug"),
-                    "content": (p.get("content") or {}).get("rendered", ""),
+                    "content": await mirror_content_images((p.get("content") or {}).get("rendered", "")),
                     "excerpt": strip_html((p.get("excerpt") or {}).get("rendered", "")),
                     "featured_image": featured,
                     "categories": [],
