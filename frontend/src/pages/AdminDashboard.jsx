@@ -16,6 +16,11 @@ import { useTheme } from "@/context/ThemeContext";
 import { Sun, Moon } from "lucide-react";
 
 const stripHtml = (html) => (html || "").replace(/<[^>]+>/g, "").trim();
+const slugify = (text) => (text || "")
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "");
 
 export default function AdminDashboard() {
   const { email, role, logout, authAxios } = useAuth();
@@ -550,8 +555,9 @@ function OrdersPanel({ items, authAxios, reload }) {
 
 function BlogPanel({ items, authAxios, reload }) {
   const [open, setOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const empty = { title: "", content: "", excerpt: "", featured_image: "", published: true, seo_keyword: "", faq: [] };
+  const empty = { title: "", slug: "", content: "", excerpt: "", featured_image: "", published: true, seo_keyword: "", faq: [] };
   const [form, setForm] = useState(empty);
   const [uploadingFeatured, setUploadingFeatured] = useState(false);
   const [uploadingContent, setUploadingContent] = useState(false);
@@ -623,6 +629,49 @@ function BlogPanel({ items, authAxios, reload }) {
       setUploadingContent(false);
       e.target.value = "";
     }
+  };
+
+  // Lets the admin select a word/phrase in the content, click "Insérer un lien" and
+  // give a URL — or, if the selection/cursor already sits inside an existing <a>,
+  // offers to edit its href or remove the link (unwrap back to plain text) instead
+  // of creating a nested/duplicate one.
+  const insertOrEditLink = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    const content = form.content || "";
+    const selStart = el.selectionStart;
+    const selEnd = el.selectionEnd;
+
+    const anchorMatches = [...content.matchAll(/<a\b[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+    const existing = anchorMatches.find(m => selStart >= m.index && selStart <= m.index + m[0].length);
+
+    if (existing) {
+      const currentHref = existing[1];
+      const innerText = existing[2];
+      const action = window.prompt(
+        `Lien existant vers : ${currentHref}\nModifiez l'URL ci-dessous, ou effacez le champ puis validez pour supprimer le lien.`,
+        currentHref,
+      );
+      if (action === null) return;
+      const replacement = action.trim() === "" ? innerText : `<a href="${action.trim()}" target="_blank" rel="noopener">${innerText}</a>`;
+      const newContent = content.slice(0, existing.index) + replacement + content.slice(existing.index + existing[0].length);
+      setForm(f => ({ ...f, content: newContent }));
+      return;
+    }
+
+    const selectedText = content.slice(selStart, selEnd);
+    const linkText = selectedText || window.prompt("Texte du lien :", "") || "";
+    if (!linkText) return;
+    const url = window.prompt("URL de destination (interne, ex: /product/mon-produit, ou externe https://...) :", "https://");
+    if (!url) return;
+    const tag = `<a href="${url.trim()}" target="_blank" rel="noopener">${linkText}</a>`;
+    const newContent = content.slice(0, selStart) + tag + content.slice(selEnd);
+    setForm(f => ({ ...f, content: newContent }));
+    const newCursorPos = selStart + tag.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newCursorPos, newCursorPos);
+    });
   };
 
   // "Lecture de lien images" — pulls out every <img> already present in the pasted/typed
@@ -717,6 +766,32 @@ function BlogPanel({ items, authAxios, reload }) {
               <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
+              <Label>URL de l'article (slug)</Label>
+              <div className="flex gap-2 items-center">
+                <span className="text-xs text-muted-foreground shrink-0">/blog/</span>
+                <Input
+                  value={form.slug || ""}
+                  onChange={e => setForm({ ...form, slug: slugify(e.target.value) })}
+                  placeholder={slugify(stripHtml(form.title)) || "genere-automatiquement-si-vide"}
+                  data-testid="blog-slug-input"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="rounded-none shrink-0"
+                  onClick={() => setForm({ ...form, slug: slugify(stripHtml(form.title)) })}
+                >
+                  Régénérer depuis le titre
+                </Button>
+              </div>
+              {editing && editing.slug && form.slug && form.slug !== editing.slug && (
+                <p className="text-xs text-amber-600 mt-1">
+                  L'URL changera de /blog/{editing.slug} vers /blog/{form.slug} — une redirection automatique sera créée.
+                </p>
+              )}
+            </div>
+            <div>
               <div className="flex justify-between items-baseline">
                 <Label>Extrait (meta description)</Label>
                 <span className={`text-xs ${form.excerpt.length > 160 ? "text-destructive" : "text-muted-foreground"}`}>{form.excerpt.length} / 160</span>
@@ -761,15 +836,21 @@ function BlogPanel({ items, authAxios, reload }) {
               </div>
             </div>
             <div>
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center flex-wrap gap-2">
                 <Label>Contenu (HTML)</Label>
-                <label className="inline-block">
-                  <input type="file" accept="image/*" className="hidden" onChange={uploadContentImage} disabled={uploadingContent} data-testid="blog-content-image-upload-input" />
-                  <span className="text-xs border border-border px-3 py-1.5 cursor-pointer inline-block hover:bg-secondary">
-                    {uploadingContent ? "Envoi..." : "Insérer une image"}
-                  </span>
-                </label>
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" variant="outline" className="rounded-none text-xs h-auto py-1.5" onClick={insertOrEditLink} data-testid="blog-insert-link-btn">
+                    Insérer un lien
+                  </Button>
+                  <label className="inline-block">
+                    <input type="file" accept="image/*" className="hidden" onChange={uploadContentImage} disabled={uploadingContent} data-testid="blog-content-image-upload-input" />
+                    <span className="text-xs border border-border px-3 py-1.5 cursor-pointer inline-block hover:bg-secondary">
+                      {uploadingContent ? "Envoi..." : "Insérer une image"}
+                    </span>
+                  </label>
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground mb-1">Sélectionnez du texte dans le champ ci-dessous puis cliquez sur "Insérer un lien". Cliquez de nouveau avec le curseur dans un lien existant pour le modifier ou le supprimer.</p>
               <Textarea ref={contentRef} rows={10} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
               {contentImages.length > 0 && (
                 <div className="mt-2 space-y-2">
@@ -838,8 +919,40 @@ function BlogPanel({ items, authAxios, reload }) {
               )}
             </div>
             <div className="flex items-center gap-2"><Switch checked={form.published} onCheckedChange={v => setForm({ ...form, published: v })} /> <Label>Publié</Label></div>
-            <Button onClick={save} className="cta-primary rounded-none w-full">Enregistrer</Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="rounded-none flex-1" onClick={() => setPreviewOpen(true)} data-testid="blog-preview-btn">Aperçu</Button>
+              <Button onClick={save} className="cta-primary rounded-none flex-1" data-testid="blog-save-btn">Enregistrer</Button>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Aperçu — {stripHtml(form.title) || "Sans titre"}</DialogTitle></DialogHeader>
+          <article className="px-1">
+            <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-4">
+              {new Date().toLocaleDateString("fr-FR")}
+            </div>
+            <h1 className="display text-3xl font-black mb-6" dangerouslySetInnerHTML={{ __html: form.title || "Sans titre" }} />
+            {form.featured_image && (
+              <img src={form.featured_image} alt={form.featured_image_alt || ""} className="w-full aspect-video object-cover mb-8" />
+            )}
+            <div className="prose-ks" dangerouslySetInnerHTML={{ __html: form.content || "<p class='text-muted-foreground'>Contenu vide.</p>" }} />
+            {(form.faq || []).filter(f => f.question && f.answer).length > 0 && (
+              <div className="mt-12 border-t border-border pt-8">
+                <h2 className="display text-2xl font-bold mb-6">Questions fréquentes</h2>
+                <div className="space-y-6">
+                  {(form.faq || []).filter(f => f.question && f.answer).map((f, i) => (
+                    <div key={i}>
+                      <h3 className="font-bold mb-1" dangerouslySetInnerHTML={{ __html: f.question }} />
+                      <p className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: f.answer }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </article>
         </DialogContent>
       </Dialog>
     </div>
