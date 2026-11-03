@@ -4025,10 +4025,17 @@ async def google_merchant_feed():
 
 # ----------------------------- Include & CORS -----------------------------
 app.include_router(api)
+# allow_origins=["*"] combined with allow_credentials=True is a known Starlette
+# footgun: the OPTIONS preflight correctly echoes back the specific request Origin,
+# but Starlette's CORSMiddleware sends a literal "Access-Control-Allow-Origin: *" on
+# the *actual* (non-preflight) response in that combination — which browsers reject
+# outright whenever credentials are involved, surfacing as a generic CORS error even
+# though the preflight itself looked fine. Default to the real site origins instead
+# of "*" so a missing/blank CORS_ORIGINS env var can't silently reintroduce this.
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=os.environ.get("CORS_ORIGINS", "https://kamistreet.fr,https://www.kamistreet.fr").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
