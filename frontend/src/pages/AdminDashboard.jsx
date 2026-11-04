@@ -738,20 +738,43 @@ function BlogPanel({ items, authAxios, reload }) {
         <h2 className="display text-xl font-bold">Articles ({items.length})</h2>
         <Button onClick={() => { setEditing(null); setForm(empty); setOpen(true); }} className="cta-primary rounded-none"><Plus className="w-4 h-4 mr-2" />Nouveau</Button>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
-        {items.map(b => (
-          <div key={b.id} className="border border-border p-4 flex gap-4">
-            {b.featured_image && <img src={b.featured_image} alt={b.title?.replace(/<[^>]+>/g, "")} className="w-24 h-24 object-cover" />}
-            <div className="flex-1">
-              <div className="font-bold" dangerouslySetInnerHTML={{ __html: b.title }} />
-              <div className="text-xs text-muted-foreground line-clamp-2 mt-1">{b.excerpt}</div>
-              <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="ghost" onClick={() => { setEditing(b); setForm({ ...b, faq: b.faq || [] }); setOpen(true); }}><Edit className="w-3 h-3" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => del(b.id)}><Trash2 className="w-3 h-3" /></Button>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="overflow-x-auto border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="p-3">Titre</th>
+              <th className="p-3">Catégorie</th>
+              <th className="p-3">Statut</th>
+              <th className="p-3 text-right">Vues</th>
+              <th className="p-3">Date</th>
+              <th className="p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...items].sort((a, b) => (b.published_at || "").localeCompare(a.published_at || "")).map(b => (
+              <tr key={b.id} className="border-b border-border last:border-0">
+                <td className="p-3">
+                  <div className="font-bold" dangerouslySetInnerHTML={{ __html: b.title }} />
+                  <div className="text-xs text-muted-foreground">/blog/{b.slug}</div>
+                </td>
+                <td className="p-3">{(b.categories && b.categories[0]) || "—"}</td>
+                <td className="p-3">
+                  <span className={`text-xs px-2 py-0.5 rounded ${b.published ? "bg-emerald-100 text-emerald-700" : "bg-secondary text-muted-foreground"}`}>
+                    {b.published ? "Publié" : "Brouillon"}
+                  </span>
+                </td>
+                <td className="p-3 text-right font-mono" data-testid="blog-views-count">{b.views || 0}</td>
+                <td className="p-3 whitespace-nowrap">{b.published_at ? new Date(b.published_at).toLocaleDateString("fr-FR") : "—"}</td>
+                <td className="p-3">
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => { setEditing(b); setForm({ ...b, faq: b.faq || [] }); setOpen(true); }}><Edit className="w-3 h-3" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => del(b.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>

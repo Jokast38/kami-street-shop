@@ -798,6 +798,8 @@ async def list_blog(limit: int = 50):
 async def get_blog(slug: str):
     p = await db.blog.find_one({"slug": slug, "published": True}, {"_id": 0})
     if p:
+        await db.blog.update_one({"slug": slug}, {"$inc": {"views": 1}})
+        p["views"] = p.get("views", 0) + 1
         return p
     redirect = await db.blog_redirects.find_one({"old_slug": slug}, {"_id": 0})
     if redirect:
@@ -1266,6 +1268,7 @@ async def create_blog(body: BlogIn, user=Depends(current_staff)):
     p["slug"] = p.get("slug") or slugify(body.title)
     p["id"] = str(uuid.uuid4())
     p["published_at"] = now_iso()
+    p["views"] = 0
     await db.blog.insert_one(p)
     return clean(p)
 
